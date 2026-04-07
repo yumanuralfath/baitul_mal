@@ -1,5 +1,6 @@
 import 'package:baitul_mal_plus/core/theme_controller.dart';
-import 'package:baitul_mal_plus/ui/core/ui/appbar.dart';
+import 'package:baitul_mal_plus/ui/core/widget/action_button.dart';
+import 'package:baitul_mal_plus/ui/core/widget/appbar.dart';
 import 'package:flutter/material.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -10,7 +11,8 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: buildAppBar(context, toggleTheme),
-      body: Center(child: Text('Hello World')),
+      body: const Center(child: Text('Belum Ada Peserta')),
+      floatingActionButton: ActionButton(),
     );
   }
 }
