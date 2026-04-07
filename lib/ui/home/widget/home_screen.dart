@@ -1,3 +1,4 @@
+import 'package:baitul_mal_plus/core/theme_controller.dart';
 import 'package:baitul_mal_plus/ui/core/ui/appbar.dart';
 import 'package:flutter/material.dart';
 
@@ -22,19 +23,27 @@ class BaitulMalApp extends StatefulWidget {
 }
 
 class _BaitulMalAppState extends State<BaitulMalApp> {
-  bool isDark = false;
+  final ThemeController _themeController = ThemeController();
 
-  void toggleTheme() {
-    setState(() {
-      isDark = !isDark;
+  @override
+  void initState() {
+    super.initState();
+    _themeController.addListener(() {
+      setState(() {});
     });
+  }
+
+  @override
+  void dispose() {
+    _themeController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+      themeMode: _themeController.isDark ? ThemeMode.dark : ThemeMode.light,
 
       theme: ThemeData(
         useMaterial3: true,
@@ -48,7 +57,7 @@ class _BaitulMalAppState extends State<BaitulMalApp> {
         colorSchemeSeed: Colors.blue,
       ),
 
-      home: HomeScreen(toggleTheme: toggleTheme),
+      home: HomeScreen(toggleTheme: _themeController.toggleTheme),
       themeAnimationDuration: const Duration(milliseconds: 300),
     );
   }
