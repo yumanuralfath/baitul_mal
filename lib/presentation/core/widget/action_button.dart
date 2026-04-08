@@ -8,7 +8,7 @@ class ActionButton extends StatelessWidget {
     return FloatingActionButton.extended(
       onPressed: () {},
       icon: const Icon(Icons.add),
-      label: const Text("Tambah Transaksi"),
+      label: const Text("Tambah Project"),
     );
   }
 }

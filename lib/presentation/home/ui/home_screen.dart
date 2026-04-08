@@ -1,6 +1,6 @@
 import 'package:baitul_mal_plus/core/theme_controller.dart';
-import 'package:baitul_mal_plus/ui/core/widget/action_button.dart';
-import 'package:baitul_mal_plus/ui/core/widget/appbar.dart';
+import 'package:baitul_mal_plus/presentation/core/widget/action_button.dart';
+import 'package:baitul_mal_plus/presentation/core/widget/appbar.dart';
 import 'package:flutter/material.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -11,7 +11,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: buildAppBar(context, toggleTheme),
-      body: const Center(child: Text('Belum Ada Peserta')),
+      body: const Center(child: Text('Belum Ada Project')),
       floatingActionButton: ActionButton(),
     );
   }
@@ -56,7 +56,8 @@ class _BaitulMalAppState extends State<BaitulMalApp> {
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-        colorSchemeSeed: Colors.blue,
+        colorSchemeSeed: Colors.blueGrey,
+        scaffoldBackgroundColor: const Color(0xFF121212),
       ),
 
       home: HomeScreen(toggleTheme: _themeController.toggleTheme),
