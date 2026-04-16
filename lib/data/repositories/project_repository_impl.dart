@@ -14,7 +14,7 @@ class ProjectRepositoryImpl implements ProjectRepository {
   static const String _table = 'projects';
 
   ProjectRepositoryImpl({DatabaseHelper? dbHelper})
-      : _dbHelper = dbHelper ?? DatabaseHelper();
+    : _dbHelper = dbHelper ?? DatabaseHelper();
 
   @override
   Future<List<ProjectModel>> getAll() async {
@@ -29,9 +29,11 @@ class ProjectRepositoryImpl implements ProjectRepository {
   @override
   Future<int> add(ProjectModel project) async {
     final db = await _dbHelper.database;
+    final now = DateTime.now();
+    final projectToSave = project.copyWith(createdAt: now, updatedAt: now);
     return db.insert(
       _table,
-      project.toMap(),
+      projectToSave.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -40,9 +42,11 @@ class ProjectRepositoryImpl implements ProjectRepository {
   Future<void> update(ProjectModel project) async {
     assert(project.id != null, 'Project harus memiliki id untuk di-update');
     final db = await _dbHelper.database;
+    final projectToUpdate = project.copyWith(updatedAt: DateTime.now());
+
     await db.update(
       _table,
-      project.toMap(),
+      projectToUpdate.toMap(),
       where: 'id = ?',
       whereArgs: [project.id],
     );
@@ -51,10 +55,6 @@ class ProjectRepositoryImpl implements ProjectRepository {
   @override
   Future<void> delete(int id) async {
     final db = await _dbHelper.database;
-    await db.delete(
-      _table,
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.delete(_table, where: 'id = ?', whereArgs: [id]);
   }
 }

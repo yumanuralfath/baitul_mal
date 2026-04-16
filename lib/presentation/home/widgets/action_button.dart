@@ -1,5 +1,5 @@
 import 'package:baitul_mal_plus/domain/repositories/project_repository.dart';
-import 'package:baitul_mal_plus/presentation/core/widgets/add_project_bottom_sheet.dart';
+import 'package:baitul_mal_plus/presentation/home/widgets/add_project_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 
 /// Floating action button untuk menambah project baru.
