@@ -5,36 +5,54 @@
 class ProjectModel {
   final int? id;
   final String name;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   const ProjectModel({
     this.id,
     required this.name,
+    this.createdAt,
+    this.updatedAt,
   });
 
-  /// Konversi object ke Map untuk disimpan ke database.
   Map<String, dynamic> toMap() {
-    return {
-      if (id != null) 'id': id, // Jangan kirim id jika null (auto-increment)
-      'name': name,
-    };
+    return {if (id != null) 'id': id, 'name': name};
   }
 
-  /// Konversi Map dari database menjadi object [ProjectModel].
   factory ProjectModel.fromMap(Map<String, dynamic> map) {
     return ProjectModel(
       id: map['id'] as int?,
       name: map['name'] as String,
+      createdAt: map['created_at'] != null
+          ? DateTime.parse(map['created_at'])
+          : null,
+      updatedAt: map['updated_at'] != null
+          ? DateTime.parse(map['updated_at'])
+          : null,
     );
   }
 
-  /// Membuat salinan object dengan nilai yang diubah.
-  ProjectModel copyWith({int? id, String? name}) {
+  ProjectModel copyWith({
+    int? id,
+    String? name,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
     return ProjectModel(
       id: id ?? this.id,
       name: name ?? this.name,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
   @override
-  String toString() => 'ProjectModel(id: $id, name: $name)';
+  String toString() {
+    return 'ProjectModel('
+        'id: $id, '
+        'name: $name, '
+        'createdAt: $createdAt, '
+        'updatedAt: $updatedAt'
+        ')';
+  }
 }

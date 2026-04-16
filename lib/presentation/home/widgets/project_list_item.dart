@@ -1,3 +1,4 @@
+import 'package:baitul_mal_plus/core/helper/format_date_helper.dart';
 import 'package:baitul_mal_plus/domain/models/project_model.dart';
 import 'package:flutter/material.dart';
 
@@ -20,15 +21,27 @@ class ProjectListItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: ListTile(
-        leading: CircleAvatar(
-          child: Text(
-            project.name.isNotEmpty ? project.name[0].toUpperCase() : '?',
-          ),
-        ),
+        leading: Icon(Icons.folder),
         title: Text(project.name),
-        subtitle: project.id != null ? Text('ID: ${project.id}') : null,
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              formatDate(project.createdAt!),
+              style: TextStyle(fontSize: 12),
+            ),
+            Text(
+              timeAgo(project.updatedAt!),
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
         trailing: onDelete != null
             ? IconButton(
                 icon: const Icon(Icons.delete_outline),
