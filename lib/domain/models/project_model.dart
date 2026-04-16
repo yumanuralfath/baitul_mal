@@ -16,7 +16,12 @@ class ProjectModel {
   });
 
   Map<String, dynamic> toMap() {
-    return {if (id != null) 'id': id, 'name': name};
+    return {
+      if (id != null) 'id': id,
+      'name': name,
+      'created_at': DateTime.now().toString(),
+      'updated_at': DateTime.now().toString(),
+    };
   }
 
   factory ProjectModel.fromMap(Map<String, dynamic> map) {
