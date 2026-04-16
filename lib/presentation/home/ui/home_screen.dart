@@ -1,8 +1,8 @@
 import 'package:baitul_mal_plus/data/repositories/project_repository_impl.dart';
 import 'package:baitul_mal_plus/domain/models/project_model.dart';
 import 'package:baitul_mal_plus/domain/repositories/project_repository.dart';
-import 'package:baitul_mal_plus/presentation/core/widgets/action_button.dart';
 import 'package:baitul_mal_plus/presentation/core/widgets/appbar.dart';
+import 'package:baitul_mal_plus/presentation/home/widgets/action_button.dart';
 import 'package:baitul_mal_plus/presentation/home/widgets/project_list_item.dart';
 import 'package:flutter/material.dart';
 
@@ -47,6 +47,26 @@ class _HomeScreenState extends State<HomeScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Gagal menghapus project: $e')));
+      }
+    }
+  }
+
+  Future<void> _renameProject(ProjectModel project, String newName) async {
+    try {
+      final updatedProject = project.copyWith(name: newName);
+
+      await _repository.update(updatedProject);
+      _loadProjects(); //refresh ui
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Project berhasil di-rename')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal rename project: $e')));
       }
     }
   }
@@ -99,14 +119,14 @@ class _HomeScreenState extends State<HomeScreen> {
           final project = projects[index];
           return ProjectListItem(
             project: project,
+            onRename: (String newName) {
+              if (project.id != null) {
+                _renameProject(project, newName);
+              }
+            },
             onDelete: project.id != null
                 ? () => _deleteProject(project.id!)
                 : null,
-            // onTap: () => Navigator.pushNamed(
-            //   context,
-            //   AppRoutes.projectDetail,
-            //   arguments: ProjectDetailArgs(project: project),
-            // ),
           );
         },
       ),

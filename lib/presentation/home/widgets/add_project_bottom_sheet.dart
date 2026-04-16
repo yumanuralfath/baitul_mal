@@ -20,10 +20,8 @@ Future<void> showAddProjectSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (context) => _AddProjectSheetContent(
-      repository: repository,
-      onSuccess: onSuccess,
-    ),
+    builder: (context) =>
+        _AddProjectSheetContent(repository: repository, onSuccess: onSuccess),
   );
 }
 
@@ -67,9 +65,9 @@ class _AddProjectSheetContentState extends State<_AddProjectSheetContent> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menyimpan project: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal menyimpan project: $e')));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -94,9 +92,9 @@ class _AddProjectSheetContentState extends State<_AddProjectSheetContent> {
               children: [
                 Text(
                   'Tambah Project Baru',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 20),
                 TextFormField(

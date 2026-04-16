@@ -19,8 +19,8 @@ class ProjectModel {
     return {
       if (id != null) 'id': id,
       'name': name,
-      'created_at': DateTime.now().toString(),
-      'updated_at': DateTime.now().toString(),
+      if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
+      if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
     };
   }
 
