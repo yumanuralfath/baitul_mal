@@ -44,9 +44,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _loadProjects();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menghapus project: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal menghapus project: $e')));
       }
     }
   }
@@ -54,10 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: buildAppBar(
-        context,
-        toggleTheme: widget.toggleTheme,
-      ),
+      appBar: buildAppBar(context, toggleTheme: widget.toggleTheme),
       body: FutureBuilder<List<ProjectModel>>(
         future: _projectsFuture,
         builder: _buildBody,
