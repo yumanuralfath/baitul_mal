@@ -73,8 +73,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    String titleHome = "Project Tabungan";
+
     return Scaffold(
-      appBar: buildAppBar(context, toggleTheme: widget.toggleTheme),
+      appBar: buildAppBar(
+        context,
+        toggleTheme: widget.toggleTheme,
+        title: titleHome,
+      ),
       body: FutureBuilder<List<ProjectModel>>(
         future: _projectsFuture,
         builder: _buildBody,

@@ -11,6 +11,7 @@ class AppRoutes {
 
   // ── Nama Route ────────────────────────────────────────────
   static const String home = '/';
+  static const String projectDetail = '/project/detail';
   // Tambahkan route baru di sini, contoh:
   // static const String projectDetail = '/project/detail';
   // static const String settings = '/settings';
@@ -27,7 +28,10 @@ class AppRoutes {
           return MaterialPageRoute(
             builder: (_) => HomeScreen(toggleTheme: toggleTheme),
           );
-
+        //
+        // case AppRoutes.projectDetail:
+        //   return MaterialPageRoute(builder: (_) => const ProjectDetailScreen());
+        //
         // Contoh route dengan argument:
         // case AppRoutes.projectDetail:
         //   final args = settings.arguments as ProjectDetailArgs;
