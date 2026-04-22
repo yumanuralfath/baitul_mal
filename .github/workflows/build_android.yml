@@ -27,22 +27,20 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.27.0" # Flutter 3.27 menggunakan Dart 3.6.0
+          flutter-version: "3.29.0" # Flutter 3.29.0 menggunakan Dart 3.7.0, cukup untuk flutter_lints 6.0.0
           channel: "stable"
           cache: true
+
+      - name: Disable Flutter analytics
+        run: flutter config --no-analytics
 
       - name: Verify Dart SDK version
         run: dart --version
 
-      - name: Enable Linux desktop support for SQLite (optional)
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ninja-build libgtk-3-dev
-
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      # Opsional: Jalankan analisis kode untuk memastikan tidak ada error
+      # Opsional: Analisis kode untuk deteksi dini error
       - name: Analyze project
         run: flutter analyze --no-fatal-infos
 
