@@ -27,7 +27,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.29.0" # Flutter 3.29.0 menggunakan Dart 3.7.0, cukup untuk flutter_lints 6.0.0
+          flutter-version: "3.41.7" # Flutter versi ini menyediakan Dart SDK >=3.10.8
           channel: "stable"
           cache: true
 
