@@ -31,7 +31,8 @@ class AppRoutes {
         case AppRoutes.projectDetail:
           final project = settings.arguments as ProjectModel;
           return MaterialPageRoute(
-            builder: (_) => ProjectDetailScreen(project: project),
+            builder: (_) =>
+                ProjectDetailScreen(project: project, toggleTheme: toggleTheme),
           );
 
         default:

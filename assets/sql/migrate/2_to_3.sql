@@ -1,18 +1,32 @@
 -- ============================================================
--- Aplikasi Tabungan Kelompok
+-- MIGRATION: dari schema awal (hanya projects) ke schema lengkap
+-- Jalankan ini jika database sudah ada sebelumnya
 -- ============================================================
 
--- Tabel projects (kelompok tabungan)
-CREATE TABLE IF NOT EXISTS projects (
-  id          INTEGER  PRIMARY KEY AUTOINCREMENT,
-  name        TEXT     NOT NULL,
+-- Langkah 1: tambah kolom description ke projects jika belum ada
+-- (SQLite tidak punya IF NOT EXISTS untuk ADD COLUMN, pakai try-catch di aplikasi,
+--  atau gunakan blok PRAGMA berikut sebagai pengecekan manual)
+
+-- Cek dulu struktur tabel projects, lalu jalankan baris berikut
+-- hanya jika kolom 'description' belum ada:
+
+CREATE TABLE projects_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
   description TEXT,
-  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+INSERT INTO projects_new (id, name)
+SELECT id, name FROM projects;
+
+DROP TABLE projects;
+
+ALTER TABLE projects_new RENAME TO projects;
+
 -- ============================================================
--- Tabel members (anggota per project)
+-- Langkah 2: buat tabel members
 -- ============================================================
 CREATE TABLE IF NOT EXISTS members (
   id         INTEGER  PRIMARY KEY AUTOINCREMENT,
@@ -20,67 +34,62 @@ CREATE TABLE IF NOT EXISTS members (
   name       TEXT     NOT NULL,
   phone      TEXT,
   note       TEXT,
-  is_active  INTEGER  DEFAULT 1,           -- 1 = aktif, 0 = nonaktif
+  is_active  INTEGER  DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================================
--- Tabel savings (tabungan / setoran per anggota)
+-- Langkah 3: buat tabel savings
 -- ============================================================
 CREATE TABLE IF NOT EXISTS savings (
-  id          INTEGER  PRIMARY KEY AUTOINCREMENT,
-  project_id  INTEGER  NOT NULL REFERENCES projects(id)  ON DELETE CASCADE,
-  member_id   INTEGER  NOT NULL REFERENCES members(id)   ON DELETE CASCADE,
-  amount      REAL     NOT NULL CHECK(amount > 0),
-  type        TEXT     NOT NULL DEFAULT 'deposit'
-                       CHECK(type IN ('deposit', 'withdrawal')),
-                       -- deposit   = setoran masuk
-                       -- withdrawal = penarikan tabungan
-  note        TEXT,
-  transaction_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Tabel loans (peminjaman dana dari kas project)
--- ============================================================
-CREATE TABLE IF NOT EXISTS loans (
   id               INTEGER  PRIMARY KEY AUTOINCREMENT,
   project_id       INTEGER  NOT NULL REFERENCES projects(id)  ON DELETE CASCADE,
   member_id        INTEGER  NOT NULL REFERENCES members(id)   ON DELETE CASCADE,
   amount           REAL     NOT NULL CHECK(amount > 0),
-  interest_rate    REAL     DEFAULT 0,      -- % bunga (opsional)
-  total_amount     REAL     NOT NULL,       -- pokok + bunga
-  paid_amount      REAL     DEFAULT 0,      -- total sudah dibayar
-  status           TEXT     NOT NULL DEFAULT 'active'
-                            CHECK(status IN ('active', 'paid', 'overdue')),
-                            -- active  = masih berjalan
-                            -- paid    = lunas
-                            -- overdue = lewat jatuh tempo
-  due_date         DATETIME,               -- jatuh tempo (opsional)
+  type             TEXT     NOT NULL DEFAULT 'deposit'
+                            CHECK(type IN ('deposit', 'withdrawal')),
   note             TEXT,
-  loan_date        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  transaction_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================================
--- Tabel loan_payments (cicilan / pelunasan pinjaman)
+-- Langkah 4: buat tabel loans
+-- ============================================================
+CREATE TABLE IF NOT EXISTS loans (
+  id            INTEGER  PRIMARY KEY AUTOINCREMENT,
+  project_id    INTEGER  NOT NULL REFERENCES projects(id)  ON DELETE CASCADE,
+  member_id     INTEGER  NOT NULL REFERENCES members(id)   ON DELETE CASCADE,
+  amount        REAL     NOT NULL CHECK(amount > 0),
+  interest_rate REAL     DEFAULT 0,
+  total_amount  REAL     NOT NULL,
+  paid_amount   REAL     DEFAULT 0,
+  status        TEXT     NOT NULL DEFAULT 'active'
+                         CHECK(status IN ('active', 'paid', 'overdue')),
+  due_date      DATETIME,
+  note          TEXT,
+  loan_date     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- Langkah 5: buat tabel loan_payments
 -- ============================================================
 CREATE TABLE IF NOT EXISTS loan_payments (
-  id               INTEGER  PRIMARY KEY AUTOINCREMENT,
-  loan_id          INTEGER  NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
-  amount           REAL     NOT NULL CHECK(amount > 0),
-  note             TEXT,
-  payment_date     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+  id           INTEGER  PRIMARY KEY AUTOINCREMENT,
+  loan_id      INTEGER  NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  amount       REAL     NOT NULL CHECK(amount > 0),
+  note         TEXT,
+  payment_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================================
--- TRIGGER: auto update updated_at
+-- Langkah 6: buat semua trigger
 -- ============================================================
 CREATE TRIGGER IF NOT EXISTS trg_projects_updated
   AFTER UPDATE ON projects FOR EACH ROW
@@ -102,10 +111,6 @@ CREATE TRIGGER IF NOT EXISTS trg_loan_payments_updated
   AFTER UPDATE ON loan_payments FOR EACH ROW
   BEGIN UPDATE loan_payments SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
 
--- ============================================================
--- TRIGGER: auto update loans.paid_amount & status setelah
---          ada pembayaran baru di loan_payments
--- ============================================================
 CREATE TRIGGER IF NOT EXISTS trg_loan_payments_after_insert
   AFTER INSERT ON loan_payments FOR EACH ROW
   BEGIN
@@ -129,7 +134,7 @@ CREATE TRIGGER IF NOT EXISTS trg_loan_payments_after_insert
   END;
 
 -- ============================================================
--- VIEW: ringkasan tabungan per anggota per project
+-- Langkah 7: buat semua VIEW
 -- ============================================================
 CREATE VIEW IF NOT EXISTS v_member_savings AS
 SELECT
@@ -146,9 +151,6 @@ JOIN members  m ON m.project_id = p.id
 LEFT JOIN savings s ON s.member_id = m.id
 GROUP BY p.id, m.id;
 
--- ============================================================
--- VIEW: ringkasan pinjaman per anggota
--- ============================================================
 CREATE VIEW IF NOT EXISTS v_member_loans AS
 SELECT
   p.id               AS project_id,
@@ -167,33 +169,24 @@ JOIN members  m ON m.project_id = p.id
 LEFT JOIN loans l ON l.member_id = m.id
 GROUP BY p.id, m.id;
 
--- ============================================================
--- VIEW: kas project (dana di tangan)
--- ============================================================
 CREATE VIEW IF NOT EXISTS v_project_cashflow AS
 SELECT
   p.id   AS project_id,
   p.name AS project_name,
-  -- Total uang masuk dari tabungan
   COALESCE(SUM(CASE WHEN s.type = 'deposit'    THEN s.amount ELSE 0 END), 0) AS total_setoran,
-  -- Total uang keluar dari penarikan tabungan
   COALESCE(SUM(CASE WHEN s.type = 'withdrawal' THEN s.amount ELSE 0 END), 0) AS total_penarikan,
-  -- Total uang dipinjam (yang sudah keluar ke anggota)
   COALESCE((SELECT SUM(amount) FROM loans l WHERE l.project_id = p.id), 0) AS total_dipinjam,
-  -- Total cicilan yang sudah kembali
   COALESCE((
     SELECT SUM(lp.amount)
     FROM loan_payments lp
     JOIN loans l ON l.id = lp.loan_id
     WHERE l.project_id = p.id
   ), 0) AS total_kembali,
-  -- Sisa pinjaman belum lunas
   COALESCE((
     SELECT SUM(l.total_amount - l.paid_amount)
     FROM loans l
     WHERE l.project_id = p.id AND l.status != 'paid'
   ), 0) AS dana_dipinjam_aktif,
-  -- Dana di tangan = setoran - penarikan - dipinjam + kembali
   (
     COALESCE(SUM(CASE WHEN s.type = 'deposit'    THEN s.amount ELSE 0 END), 0)
     - COALESCE(SUM(CASE WHEN s.type = 'withdrawal' THEN s.amount ELSE 0 END), 0)
@@ -208,3 +201,7 @@ SELECT
 FROM projects p
 LEFT JOIN savings s ON s.project_id = p.id
 GROUP BY p.id;
+
+-- ============================================================
+-- Selesai. Migration berhasil dijalankan.
+-- ============================================================
