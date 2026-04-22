@@ -24,5 +24,9 @@ abstract class MemberRepository {
   Future<void> deleteLoan(int id);
   // Summary
   Future<ProjectCashflowModel?> getProjectCashflow(int projectId);
-}
 
+  Future<ProjectCashflowModel?> getProjectCashflowByDate(
+    int projectId,
+    DateTime date,
+  );
+}
