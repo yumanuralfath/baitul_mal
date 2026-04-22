@@ -115,14 +115,16 @@ class _AddProjectSheetContentState extends State<_AddProjectSheetContent> {
                     }
                     return null;
                   },
-                  onFieldSubmitted: (_) => _save(),
+                  onFieldSubmitted: (_) => _confirmCreateProject(context),
                 ),
                 const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: _isSaving ? null : _save,
+                    onPressed: _isSaving
+                        ? null
+                        : () => _confirmCreateProject(context),
                     child: _isSaving
                         ? const SizedBox(
                             width: 20,
@@ -137,6 +139,36 @@ class _AddProjectSheetContentState extends State<_AddProjectSheetContent> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Menampilkan dialog konfirmasi sebelum menyimpan project.
+  void _confirmCreateProject(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Simpan Project?'),
+        content: Text('Project "${_nameController.text}" akan disimpan.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.secondary,
+            ),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _save();
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.primary,
+            ),
+            child: const Text('Simpan'),
+          ),
+        ],
       ),
     );
   }

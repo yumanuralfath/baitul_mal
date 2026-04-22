@@ -7,13 +7,12 @@ import 'package:flutter/material.dart';
 PreferredSizeWidget buildAppBar(
   BuildContext context, {
   required VoidCallback toggleTheme,
-  String title = 'Tabungan Musholla',
+  String? title,
 }) {
   return AppBar(
-    title: Text(
-      title,
-      style: const TextStyle(fontWeight: FontWeight.bold),
-    ),
+    title: title != null
+        ? Text(title, style: const TextStyle(fontWeight: FontWeight.bold))
+        : null,
     centerTitle: false,
     scrolledUnderElevation: 2,
     actions: [

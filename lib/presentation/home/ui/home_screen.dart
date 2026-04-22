@@ -7,9 +7,6 @@ import 'package:baitul_mal_plus/presentation/home/widgets/project_list_item.dart
 import 'package:flutter/material.dart';
 
 /// Halaman utama yang menampilkan daftar project tabungan.
-///
-/// Screen ini tidak tahu tentang database — semua operasi data
-/// dilakukan melalui [ProjectRepository].
 class HomeScreen extends StatefulWidget {
   final VoidCallback toggleTheme;
 
@@ -73,8 +70,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    String titleHome = "Project Tabungan";
+
     return Scaffold(
-      appBar: buildAppBar(context, toggleTheme: widget.toggleTheme),
+      appBar: buildAppBar(
+        context,
+        toggleTheme: widget.toggleTheme,
+        title: titleHome,
+      ),
       body: FutureBuilder<List<ProjectModel>>(
         future: _projectsFuture,
         builder: _buildBody,

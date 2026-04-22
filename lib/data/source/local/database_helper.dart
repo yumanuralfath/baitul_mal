@@ -20,7 +20,7 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   static const String _dbName = 'baitul_mal.db';
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3;
 
   /// Mengembalikan instance database (membuat baru jika belum ada).
   Future<Database> get database async {
@@ -72,16 +72,61 @@ Future<String> _sqlLoader(String sqlLocation) async {
   return await rootBundle.loadString(sqlLocation);
 }
 
-/// execute sql with trimmed
+/// Execute SQL statements with proper handling for triggers (BEGIN...END)
 Future<void> _executeSqlBatch(Database db, String sql) async {
-  final statements = sql.split(';');
-
+  final statements = _splitSqlStatements(sql);
   await db.transaction((txn) async {
-    for (var statement in statements) {
-      final trimmed = statement.trim();
+    for (final stmt in statements) {
+      final trimmed = stmt.trim();
       if (trimmed.isNotEmpty) {
         await txn.execute(trimmed);
       }
     }
   });
+}
+
+/// Split SQL string menjadi individual statements.
+/// Menangani trigger BEGIN...END yang mengandung `;` di dalamnya.
+List<String> _splitSqlStatements(String sql) {
+  // Hapus komentar -- per baris terlebih dahulu
+  final cleaned = sql
+      .split('\n')
+      .map((line) {
+        final idx = line.indexOf('--');
+        return idx >= 0 ? line.substring(0, idx) : line;
+      })
+      .join('\n');
+
+  final statements = <String>[];
+  final buffer = StringBuffer();
+  bool insideBeginEnd = false;
+
+  for (int i = 0; i < cleaned.length; i++) {
+    final char = cleaned[i];
+    buffer.write(char);
+
+    if (char == ';') {
+      final current = buffer.toString().trim().toUpperCase();
+
+      if (!insideBeginEnd && current.contains(RegExp(r'\bBEGIN\b'))) {
+        // Kita baru tahu ini trigger setelah menemukan ; pertama di dalamnya
+        insideBeginEnd = true;
+      } else if (insideBeginEnd && current.endsWith('END;')) {
+        // Penutup trigger
+        insideBeginEnd = false;
+        statements.add(buffer.toString().trim());
+        buffer.clear();
+      } else if (!insideBeginEnd) {
+        // Statement biasa
+        statements.add(buffer.toString().trim());
+        buffer.clear();
+      }
+      // Kalau insideBeginEnd tapi bukan END; → lanjut terus (isi trigger)
+    }
+  }
+
+  final remaining = buffer.toString().trim();
+  if (remaining.isNotEmpty) statements.add(remaining);
+
+  return statements;
 }
