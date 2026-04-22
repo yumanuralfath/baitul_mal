@@ -1,4 +1,5 @@
 import 'package:baitul_mal_plus/core/helper/format_date_helper.dart';
+import 'package:baitul_mal_plus/core/routes/app_routes.dart';
 import 'package:baitul_mal_plus/domain/models/project_model.dart';
 import 'package:flutter/material.dart';
 
@@ -47,7 +48,13 @@ class ProjectListItem extends StatelessWidget {
             ),
           ],
         ),
-        onTap: onTap,
+        onTap: () {
+          Navigator.pushNamed(
+            context,
+            AppRoutes.projectDetail,
+            arguments: project,
+          );
+        },
         onLongPress: () => _showActionMenu(context),
       ),
     );

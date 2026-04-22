@@ -1,3 +1,5 @@
+import 'package:baitul_mal_plus/domain/models/project_model.dart';
+import 'package:baitul_mal_plus/presentation/ProjectDetail/ui/project_detail_screen.dart';
 import 'package:baitul_mal_plus/presentation/home/ui/home_screen.dart';
 import 'package:flutter/material.dart';
 
@@ -12,9 +14,6 @@ class AppRoutes {
   // ── Nama Route ────────────────────────────────────────────
   static const String home = '/';
   static const String projectDetail = '/project/detail';
-  // Tambahkan route baru di sini, contoh:
-  // static const String projectDetail = '/project/detail';
-  // static const String settings = '/settings';
 
   // ── Route Generator ───────────────────────────────────────
   /// Mengembalikan [RouteFactory] yang digunakan oleh [MaterialApp.onGenerateRoute].
@@ -28,19 +27,14 @@ class AppRoutes {
           return MaterialPageRoute(
             builder: (_) => HomeScreen(toggleTheme: toggleTheme),
           );
-        //
-        // case AppRoutes.projectDetail:
-        //   return MaterialPageRoute(builder: (_) => const ProjectDetailScreen());
-        //
-        // Contoh route dengan argument:
-        // case AppRoutes.projectDetail:
-        //   final args = settings.arguments as ProjectDetailArgs;
-        //   return MaterialPageRoute(
-        //     builder: (_) => ProjectDetailScreen(project: args.project),
-        //   );
+
+        case AppRoutes.projectDetail:
+          final project = settings.arguments as ProjectModel;
+          return MaterialPageRoute(
+            builder: (_) => ProjectDetailScreen(project: project),
+          );
 
         default:
-          // Fallback jika route tidak ditemukan
           return MaterialPageRoute(
             builder: (_) => const _RouteNotFoundScreen(),
           );
