@@ -7,6 +7,9 @@ class ProjectCashflowModel {
   final double totalKembali;
   final double danaDipinjamAktif;
   final double danadiTangan;
+  final double? setoranHariIni;
+  final double? pinjamanHariIni;
+  final double? pembayaranHariIni;
 
   const ProjectCashflowModel({
     required this.projectId,
@@ -17,6 +20,9 @@ class ProjectCashflowModel {
     required this.totalKembali,
     required this.danaDipinjamAktif,
     required this.danadiTangan,
+    this.setoranHariIni,
+    this.pinjamanHariIni,
+    this.pembayaranHariIni,
   });
 
   double get totalDana => totalSetoran - totalPenarikan;
@@ -31,6 +37,9 @@ class ProjectCashflowModel {
       totalKembali: (map['total_kembali'] as num? ?? 0).toDouble(),
       danaDipinjamAktif: (map['dana_dipinjam_aktif'] as num? ?? 0).toDouble(),
       danadiTangan: (map['dana_di_tangan'] as num? ?? 0).toDouble(),
+      setoranHariIni: (map['setoran_hari_ini'] as num?)?.toDouble(),
+      pinjamanHariIni: (map['pinjaman_hari_ini'] as num?)?.toDouble(),
+      pembayaranHariIni: (map['pembayaran_hari_ini'] as num?)?.toDouble(),
     );
   }
 }

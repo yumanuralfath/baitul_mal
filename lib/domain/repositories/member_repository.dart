@@ -29,4 +29,8 @@ abstract class MemberRepository {
     int projectId,
     DateTime date,
   );
+  Future<ProjectCashflowModel?> getProjectCashflowOnDate(
+    int projectId,
+    DateTime date,
+  );
 }

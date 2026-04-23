@@ -197,6 +197,14 @@ class MemberRepositoryImpl implements MemberRepository {
       59,
       59,
     ).toIso8601String();
+    final startOfDay = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      0,
+      0,
+      0,
+    ).toIso8601String();
 
     final rows = await db.rawQuery(
       '''
@@ -204,80 +212,136 @@ class MemberRepositoryImpl implements MemberRepository {
         p.id   AS project_id,
         p.name AS project_name,
  
-        -- Total setoran s/d tanggal
-        COALESCE((
-          SELECT SUM(s.amount)
-          FROM savings s
-          WHERE s.project_id = p.id
-            AND s.type = 'deposit'
-            AND s.transaction_date <= ?
-        ), 0) AS total_setoran,
+        -- Kumulatif s/d tanggal
+        COALESCE((SELECT SUM(s.amount) FROM savings s
+          WHERE s.project_id = p.id AND s.type = 'deposit'
+          AND s.transaction_date <= ?1), 0) AS total_setoran,
  
-        -- Total penarikan s/d tanggal
-        COALESCE((
-          SELECT SUM(s.amount)
-          FROM savings s
-          WHERE s.project_id = p.id
-            AND s.type = 'withdrawal'
-            AND s.transaction_date <= ?
-        ), 0) AS total_penarikan,
+        COALESCE((SELECT SUM(s.amount) FROM savings s
+          WHERE s.project_id = p.id AND s.type = 'withdrawal'
+          AND s.transaction_date <= ?1), 0) AS total_penarikan,
  
-        -- Total pinjaman yang keluar s/d tanggal
-        COALESCE((
-          SELECT SUM(l.amount)
-          FROM loans l
-          WHERE l.project_id = p.id
-            AND l.loan_date <= ?
-        ), 0) AS total_dipinjam,
+        COALESCE((SELECT SUM(l.amount) FROM loans l
+          WHERE l.project_id = p.id AND l.loan_date <= ?1), 0) AS total_dipinjam,
  
-        -- Total cicilan yang sudah kembali s/d tanggal
-        COALESCE((
-          SELECT SUM(lp.amount)
-          FROM loan_payments lp
+        COALESCE((SELECT SUM(lp.amount) FROM loan_payments lp
           JOIN loans l ON l.id = lp.loan_id
-          WHERE l.project_id = p.id
-            AND lp.payment_date <= ?
-        ), 0) AS total_kembali,
+          WHERE l.project_id = p.id AND lp.payment_date <= ?1), 0) AS total_kembali,
  
-        -- Sisa pinjaman aktif s/d tanggal
-        COALESCE((
-          SELECT SUM(l.total_amount - l.paid_amount)
-          FROM loans l
-          WHERE l.project_id = p.id
-            AND l.loan_date <= ?
-            AND l.status != 'paid'
-        ), 0) AS dana_dipinjam_aktif,
+        COALESCE((SELECT SUM(l.total_amount - l.paid_amount) FROM loans l
+          WHERE l.project_id = p.id AND l.loan_date <= ?1
+          AND l.status != 'paid'), 0) AS dana_dipinjam_aktif,
  
-        -- Dana di tangan = setoran - penarikan - dipinjam + kembali
         (
-          COALESCE((SELECT SUM(s.amount) FROM savings s
-            WHERE s.project_id = p.id AND s.type = 'deposit'
-            AND s.transaction_date <= ?), 0)
-          - COALESCE((SELECT SUM(s.amount) FROM savings s
-            WHERE s.project_id = p.id AND s.type = 'withdrawal'
-            AND s.transaction_date <= ?), 0)
+          COALESCE((SELECT SUM(s.amount) FROM savings s WHERE s.project_id = p.id
+            AND s.type = 'deposit' AND s.transaction_date <= ?1), 0)
+          - COALESCE((SELECT SUM(s.amount) FROM savings s WHERE s.project_id = p.id
+            AND s.type = 'withdrawal' AND s.transaction_date <= ?1), 0)
           - COALESCE((SELECT SUM(l.amount) FROM loans l
-            WHERE l.project_id = p.id AND l.loan_date <= ?), 0)
+            WHERE l.project_id = p.id AND l.loan_date <= ?1), 0)
           + COALESCE((SELECT SUM(lp.amount) FROM loan_payments lp
             JOIN loans l ON l.id = lp.loan_id
-            WHERE l.project_id = p.id AND lp.payment_date <= ?), 0)
-        ) AS dana_di_tangan
+            WHERE l.project_id = p.id AND lp.payment_date <= ?1), 0)
+        ) AS dana_di_tangan,
  
-      FROM projects p
-      WHERE p.id = ?
+        -- Hanya hari itu saja
+        COALESCE((SELECT SUM(s.amount) FROM savings s
+          WHERE s.project_id = p.id AND s.type = 'deposit'
+          AND s.transaction_date >= ?2 AND s.transaction_date <= ?1), 0)
+          AS setoran_hari_ini,
+ 
+        COALESCE((SELECT SUM(l.amount) FROM loans l
+          WHERE l.project_id = p.id
+          AND l.loan_date >= ?2 AND l.loan_date <= ?1), 0)
+          AS pinjaman_hari_ini,
+ 
+        COALESCE((SELECT SUM(lp.amount) FROM loan_payments lp
+          JOIN loans l ON l.id = lp.loan_id
+          WHERE l.project_id = p.id
+          AND lp.payment_date >= ?2 AND lp.payment_date <= ?1), 0)
+          AS pembayaran_hari_ini
+ 
+      FROM projects p WHERE p.id = ?3
     ''',
-      [
-        endOfDay, // total_setoran
-        endOfDay, // total_penarikan
-        endOfDay, // total_dipinjam
-        endOfDay, // total_kembali
-        endOfDay, // dana_dipinjam_aktif
-        endOfDay, // dana_di_tangan deposit
-        endOfDay, // dana_di_tangan withdrawal
-        endOfDay, // dana_di_tangan pinjam
-        endOfDay, // dana_di_tangan kembali
-        projectId,
-      ],
+      [endOfDay, startOfDay, projectId],
+    );
+
+    if (rows.isEmpty) return null;
+    return ProjectCashflowModel.fromMap(rows.first);
+  }
+
+  @override
+  Future<ProjectCashflowModel?> getProjectCashflowOnDate(
+    int projectId,
+    DateTime date,
+  ) async {
+    final db = await _db.database;
+    final endOfDay = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      23,
+      59,
+      59,
+    ).toIso8601String();
+    final startOfDay = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      0,
+      0,
+      0,
+    ).toIso8601String();
+
+    final rows = await db.rawQuery(
+      '''
+      SELECT
+        p.id   AS project_id,
+        p.name AS project_name,
+ 
+        COALESCE((SELECT SUM(s.amount) FROM savings s
+          WHERE s.project_id = p.id AND s.type = 'deposit'
+          AND s.transaction_date >= ?1 AND s.transaction_date <= ?2), 0)
+          AS total_setoran,
+ 
+        COALESCE((SELECT SUM(s.amount) FROM savings s
+          WHERE s.project_id = p.id AND s.type = 'withdrawal'
+          AND s.transaction_date >= ?1 AND s.transaction_date <= ?2), 0)
+          AS total_penarikan,
+ 
+        COALESCE((SELECT SUM(l.amount) FROM loans l
+          WHERE l.project_id = p.id
+          AND l.loan_date >= ?1 AND l.loan_date <= ?2), 0)
+          AS total_dipinjam,
+ 
+        COALESCE((SELECT SUM(lp.amount) FROM loan_payments lp
+          JOIN loans l ON l.id = lp.loan_id
+          WHERE l.project_id = p.id
+          AND lp.payment_date >= ?1 AND lp.payment_date <= ?2), 0)
+          AS total_kembali,
+ 
+        0.0 AS dana_dipinjam_aktif,
+        0.0 AS dana_di_tangan,
+ 
+        COALESCE((SELECT SUM(s.amount) FROM savings s
+          WHERE s.project_id = p.id AND s.type = 'deposit'
+          AND s.transaction_date >= ?1 AND s.transaction_date <= ?2), 0)
+          AS setoran_hari_ini,
+ 
+        COALESCE((SELECT SUM(l.amount) FROM loans l
+          WHERE l.project_id = p.id
+          AND l.loan_date >= ?1 AND l.loan_date <= ?2), 0)
+          AS pinjaman_hari_ini,
+ 
+        COALESCE((SELECT SUM(lp.amount) FROM loan_payments lp
+          JOIN loans l ON l.id = lp.loan_id
+          WHERE l.project_id = p.id
+          AND lp.payment_date >= ?1 AND lp.payment_date <= ?2), 0)
+          AS pembayaran_hari_ini
+ 
+      FROM projects p WHERE p.id = ?3
+    ''',
+      [startOfDay, endOfDay, projectId],
     );
 
     if (rows.isEmpty) return null;
