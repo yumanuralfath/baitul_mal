@@ -180,7 +180,7 @@ class _ExportSheetState extends State<ExportSheet> {
       }
 
       if (mounted) Navigator.pop(context);
-      await ExportService.shareFile(file, subject: subject);
+      await ExportService.shareFile(context, file, subject: subject);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

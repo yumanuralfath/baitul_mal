@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -11,6 +12,7 @@ import 'package:sqflite/sqflite.dart';
 // PDF
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:url_launcher/url_launcher.dart';
 
 final _nf = NumberFormat.currency(
   locale: 'id_ID',
@@ -621,7 +623,33 @@ class ExportService {
   }
 
   /// Share file menggunakan share_plus
-  static Future<void> shareFile(File file, {String? subject}) async {
+  // static Future<void> shareFile(File file, {String? subject}) async {
+  //   await Share.shareXFiles([
+  //     XFile(file.path),
+  //   ], subject: subject ?? 'Export Baitul Mal Plus');
+  // }
+
+  static Future<void> shareFile(
+    BuildContext context,
+    File file, {
+    String? subject,
+  }) async {
+    if (Platform.isLinux) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('File disimpan di:\n${file.path}'),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'Buka',
+            onPressed: () async {
+              await launchUrl(Uri.directory(file.parent.path));
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
     await Share.shareXFiles([
       XFile(file.path),
     ], subject: subject ?? 'Export Baitul Mal Plus');
