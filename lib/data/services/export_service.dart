@@ -176,19 +176,21 @@ class ExportService {
       buffer.writeln();
       buffer.writeln('--- BULAN: $monthLabel ---');
 
-      final dates = rows
-          .map((r) => r['tgl']?.toString() ?? '')
-          .where((d) => d.isNotEmpty)
-          .toSet()
-          .toList()
-        ..sort();
+      final dates =
+          rows
+              .map((r) => r['tgl']?.toString() ?? '')
+              .where((d) => d.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
 
-      final names = rows
-          .map((r) => (r['name'] ?? '').toString())
-          .where((n) => n.trim().isNotEmpty)
-          .toSet()
-          .toList()
-        ..sort();
+      final names =
+          rows
+              .map((r) => (r['name'] ?? '').toString())
+              .where((n) => n.trim().isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
 
       final netByNameDate = <String, Map<String, double>>{};
       for (final r in rows) {
@@ -589,7 +591,7 @@ class ExportService {
                   pw.SizedBox(width: 8),
                   _pdfStatBox(
                     'Dana di Tangan',
-                    _fmt(danadiTangan),
+                    _fmt(danadiTangan - totalKembali),
                     primaryColor,
                     ctx,
                   ),
@@ -674,7 +676,9 @@ class ExportService {
                         _pdfTd(_fmt(savings)),
                         _pdfTd(
                           _fmt(hutang),
-                          color: hutang > 0 ? PdfColors.grey900 : PdfColors.grey700,
+                          color: hutang > 0
+                              ? PdfColors.grey900
+                              : PdfColors.grey700,
                         ),
                         _pdfTd(
                           _fmt(saldo),
@@ -698,7 +702,10 @@ class ExportService {
               pw.SizedBox(height: 4),
               pw.Text(
                 '1 baris per anggota. Kolom tanggal dipisah tiap bulan.',
-                style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                style: const pw.TextStyle(
+                  fontSize: 8,
+                  color: PdfColors.grey700,
+                ),
               ),
               pw.SizedBox(height: 8),
               if (dateRecapRows.isEmpty)
@@ -723,12 +730,13 @@ class ExportService {
                       'id_ID',
                     ).format(DateTime.parse('$month-01'));
 
-                    final dates = monthRows
-                        .map((r) => r['tgl']?.toString() ?? '')
-                        .where((d) => d.isNotEmpty)
-                        .toSet()
-                        .toList()
-                      ..sort();
+                    final dates =
+                        monthRows
+                            .map((r) => r['tgl']?.toString() ?? '')
+                            .where((d) => d.isNotEmpty)
+                            .toSet()
+                            .toList()
+                          ..sort();
 
                     final names = memberRows
                         .map((r) => r['name']?.toString() ?? '')
@@ -739,14 +747,12 @@ class ExportService {
                     for (final row in monthRows) {
                       final raw = row['tgl']?.toString() ?? '';
                       final name = row['name']?.toString() ?? '';
-                      final setoran =
-                          (row['setoran'] as num?)?.toDouble() ?? 0;
+                      final setoran = (row['setoran'] as num?)?.toDouble() ?? 0;
                       final penarikan =
                           (row['penarikan'] as num?)?.toDouble() ?? 0;
                       final pinjaman =
                           (row['pinjaman'] as num?)?.toDouble() ?? 0;
-                      final cicilan =
-                          (row['cicilan'] as num?)?.toDouble() ?? 0;
+                      final cicilan = (row['cicilan'] as num?)?.toDouble() ?? 0;
                       final net = setoran + cicilan - penarikan - pinjaman;
                       (netMap[name] ??= {})[raw] = net;
                     }
@@ -783,7 +789,9 @@ class ExportService {
                         columnWidths: colWidths,
                         children: [
                           pw.TableRow(
-                            decoration: const pw.BoxDecoration(color: primaryColor),
+                            decoration: const pw.BoxDecoration(
+                              color: primaryColor,
+                            ),
                             children: [
                               _pdfTh('No'),
                               _pdfTh('Anggota'),
@@ -860,22 +868,24 @@ class ExportService {
                     'id_ID',
                   ).format(DateTime.parse('$month-01'));
 
-                  final dates = rows
-                      .map((r) => r['tgl']?.toString() ?? '')
-                      .where((d) => d.isNotEmpty)
-                      .toSet()
-                      .toList()
-                    ..sort();
+                  final dates =
+                      rows
+                          .map((r) => r['tgl']?.toString() ?? '')
+                          .where((d) => d.isNotEmpty)
+                          .toSet()
+                          .toList()
+                        ..sort();
                   final shownDates = dates.length > 10
                       ? dates.sublist(dates.length - 10)
                       : dates;
 
-                  final names = rows
-                      .map((r) => r['name']?.toString() ?? '')
-                      .where((n) => n.trim().isNotEmpty)
-                      .toSet()
-                      .toList()
-                    ..sort();
+                  final names =
+                      rows
+                          .map((r) => r['name']?.toString() ?? '')
+                          .where((n) => n.trim().isNotEmpty)
+                          .toSet()
+                          .toList()
+                        ..sort();
 
                   final netMap = <String, Map<String, double>>{};
                   for (final r in rows) {
@@ -911,13 +921,18 @@ class ExportService {
                       columnWidths: colWidths,
                       children: [
                         pw.TableRow(
-                          decoration: const pw.BoxDecoration(color: primaryColor),
+                          decoration: const pw.BoxDecoration(
+                            color: primaryColor,
+                          ),
                           children: [
                             _pdfTh('No'),
                             _pdfTh('Anggota'),
                             ...shownDates.map(
                               (d) => _pdfTh(
-                                DateFormat('dd', 'id_ID').format(DateTime.parse(d)),
+                                DateFormat(
+                                  'dd',
+                                  'id_ID',
+                                ).format(DateTime.parse(d)),
                               ),
                             ),
                           ],
@@ -1058,7 +1073,9 @@ class ExportService {
     final buffer = StringBuffer();
     buffer.writeln('Project,$projectName');
     buffer.writeln('Member,$memberName');
-    buffer.writeln('Dicetak,${DateFormat('dd MMM yyyy HH:mm', 'id_ID').format(DateTime.now())}');
+    buffer.writeln(
+      'Dicetak,${DateFormat('dd MMM yyyy HH:mm', 'id_ID').format(DateTime.now())}',
+    );
     buffer.writeln();
 
     final memberSummary = await db.rawQuery(
@@ -1266,7 +1283,10 @@ class ExportService {
     );
 
     final pdf = pw.Document();
-    final now = DateFormat('dd MMMM yyyy HH:mm', 'id_ID').format(DateTime.now());
+    final now = DateFormat(
+      'dd MMMM yyyy HH:mm',
+      'id_ID',
+    ).format(DateTime.now());
     const primaryColor = PdfColor.fromInt(0xFF1565C0);
     const errorColor = PdfColor.fromInt(0xFFC62828);
     const successColor = PdfColor.fromInt(0xFF2E7D32);
@@ -1339,7 +1359,12 @@ class ExportService {
           pw.SizedBox(height: 8),
           pw.Row(
             children: [
-              _pdfStatBox('Tabungan Bersih', _fmt(netSavings), successColor, ctx),
+              _pdfStatBox(
+                'Tabungan Bersih',
+                _fmt(netSavings),
+                successColor,
+                ctx,
+              ),
               pw.SizedBox(width: 8),
               _pdfStatBox(
                 'Sisa Hutang',
@@ -1394,8 +1419,9 @@ class ExportService {
                   final isDeposit = row['type'] == 'deposit';
                   final amount = (row['amount'] as num?)?.toDouble() ?? 0;
                   return pw.TableRow(
-                    decoration:
-                        i.isEven ? const pw.BoxDecoration(color: bgColor) : null,
+                    decoration: i.isEven
+                        ? const pw.BoxDecoration(color: bgColor)
+                        : null,
                     children: [
                       _pdfTd(
                         isDeposit ? 'Setor' : 'Tarik',
@@ -1405,7 +1431,9 @@ class ExportService {
                         '${isDeposit ? '+' : '-'}${_fmt(amount)}',
                         color: isDeposit ? successColor : errorColor,
                       ),
-                      _pdfTd(_fmtDate(row['transaction_date']?.toString() ?? '')),
+                      _pdfTd(
+                        _fmtDate(row['transaction_date']?.toString() ?? ''),
+                      ),
                       _pdfTd(row['note']?.toString() ?? '-', fontSize: 8),
                     ],
                   );
@@ -1449,14 +1477,14 @@ class ExportService {
                 ...loans.asMap().entries.map((e) {
                   final i = e.key;
                   final row = e.value;
-                  final total =
-                      (row['total_amount'] as num?)?.toDouble() ?? 0;
+                  final total = (row['total_amount'] as num?)?.toDouble() ?? 0;
                   final paid = (row['paid_amount'] as num?)?.toDouble() ?? 0;
                   final remain = total - paid;
                   final statusRaw = row['status']?.toString() ?? '';
                   return pw.TableRow(
-                    decoration:
-                        i.isEven ? const pw.BoxDecoration(color: bgColor) : null,
+                    decoration: i.isEven
+                        ? const pw.BoxDecoration(color: bgColor)
+                        : null,
                     children: [
                       _pdfTd(_fmt(total)),
                       _pdfTd(_fmt(paid), color: successColor),

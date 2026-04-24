@@ -383,13 +383,13 @@ class _SummaryContent extends StatelessWidget {
             ),
             _InfoCard(
               label: 'Dana di\nTangan',
-              value: _fmt(cashflow.danadiTangan),
+              value: _fmt((cashflow.danadiTangan - cashflow.totalKembali)),
               icon: Icons.account_balance_wallet,
               color: cs.secondaryContainer,
               onColor: cs.onSecondaryContainer,
             ),
             _InfoCard(
-              label: 'Dana\nDipinjam',
+              label: 'Sisa Dana\nDipinjam',
               value: _fmt(cashflow.danaDipinjamAktif),
               icon: Icons.credit_card,
               color: cs.errorContainer,
@@ -431,7 +431,7 @@ class _SummaryContent extends StatelessWidget {
         ),
         _DetailRow(
           'Dana di Tangan',
-          cashflow.danadiTangan,
+          (cashflow.danadiTangan - cashflow.totalKembali),
           isPositive: true,
           isBold: true,
         ),
@@ -565,7 +565,7 @@ class _PieChartCardState extends State<PieChartCard>
                 Expanded(
                   child: LegendTile(
                     color: cs.primary,
-                    label: 'Di Tangan',
+                    label: 'Dana Kembali',
                     value: _fmt(inHand),
                     percent: '${pctHand.toStringAsFixed(1)}%',
                   ),
@@ -574,7 +574,7 @@ class _PieChartCardState extends State<PieChartCard>
                 Expanded(
                   child: LegendTile(
                     color: cs.error,
-                    label: 'Dipinjam',
+                    label: 'Sisa Pinjaman',
                     value: _fmt(inLoan),
                     percent: '${pctLoan.toStringAsFixed(1)}%',
                   ),
