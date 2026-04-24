@@ -13,6 +13,8 @@ jobs:
     steps:
       # 1. Checkout
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # perlu history + tags untuk changelog sejak tag terakhir
 
       # 2. Setup Java
       - uses: actions/setup-java@v4
@@ -51,11 +53,60 @@ jobs:
       # 7. Build
       - run: flutter build apk --release
 
-      # 8. 🧾 Generate changelog (optional)
+      # 8. 🧾 Generate changelog (from last tag, grouped by Conventional Commits)
       - name: Generate changelog
         id: changelog
         run: |
-          LOG=$(git log -10 --pretty=format:"- %s")
+          # Pastikan tags ikut ter-fetch (kadang perlu walau fetch-depth:0)
+          git fetch --tags --force
+
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -n "$LAST_TAG" ]; then
+            RANGE="$LAST_TAG..HEAD"
+          else
+            RANGE="HEAD"
+          fi
+
+          # Ambil subject commit (skip merge)
+          COMMITS=$(git log $RANGE --no-merges --pretty=format:"%s")
+
+          # Helper: filter commits by prefix conventional commit
+          section () {
+            title="$1"
+            pattern="$2"
+            lines=$(echo "$COMMITS" | grep -E "$pattern" || true)
+            if [ -n "$lines" ]; then
+              echo "### $title"
+              echo "$lines" | sed 's/^/- /'
+              echo ""
+            fi
+          }
+
+          {
+            if [ -n "$LAST_TAG" ]; then
+              echo "Changes since \`$LAST_TAG\`"
+              echo ""
+            fi
+
+            section "Features"  '^feat(\(.+\))?: '
+            section "Fixes"     '^fix(\(.+\))?: '
+            section "Performance" '^perf(\(.+\))?: '
+            section "Refactors" '^refactor(\(.+\))?: '
+            section "Docs"      '^docs(\(.+\))?: '
+            section "Tests"     '^test(\(.+\))?: '
+            section "Chores"    '^chore(\(.+\))?: '
+            section "CI"        '^ci(\(.+\))?: '
+
+            # Lainnya: commit yang tidak match conventional prefix
+            others=$(echo "$COMMITS" | grep -Ev '^(feat|fix|perf|refactor|docs|test|chore|ci)(\(.+\))?: ' || true)
+            if [ -n "$others" ]; then
+              echo "### Other"
+              echo "$others" | sed 's/^/- /'
+              echo ""
+            fi
+          } > CHANGELOG.md
+
+          LOG=$(cat CHANGELOG.md)
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$LOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT

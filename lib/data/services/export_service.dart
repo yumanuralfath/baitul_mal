@@ -106,8 +106,78 @@ class ExportService {
 
     final buffer = StringBuffer();
 
-    // Header
-    buffer.writeln('=== TABUNGAN ===');
+    // REKAP PER TANGGAL (lebih mudah dibaca: nama tidak berulang per transaksi)
+    buffer.writeln('=== REKAP PER TANGGAL ===');
+    buffer.writeln('Tanggal,Nama Member,Setoran,Penarikan,Pinjaman,Cicilan');
+
+    final rekap = await db.rawQuery(
+      '''
+      SELECT
+        x.tgl,
+        x.name,
+        SUM(x.setoran)   AS setoran,
+        SUM(x.penarikan) AS penarikan,
+        SUM(x.pinjaman)  AS pinjaman,
+        SUM(x.cicilan)   AS cicilan
+      FROM (
+        SELECT
+          date(s.transaction_date) AS tgl,
+          m.name AS name,
+          CASE WHEN s.type = 'deposit' THEN s.amount ELSE 0 END AS setoran,
+          CASE WHEN s.type = 'withdrawal' THEN s.amount ELSE 0 END AS penarikan,
+          0 AS pinjaman,
+          0 AS cicilan
+        FROM savings s
+        JOIN members m ON m.id = s.member_id
+        WHERE s.project_id = ?
+
+        UNION ALL
+
+        SELECT
+          date(l.loan_date) AS tgl,
+          m.name AS name,
+          0 AS setoran,
+          0 AS penarikan,
+          l.total_amount AS pinjaman,
+          0 AS cicilan
+        FROM loans l
+        JOIN members m ON m.id = l.member_id
+        WHERE l.project_id = ?
+
+        UNION ALL
+
+        SELECT
+          date(lp.payment_date) AS tgl,
+          m.name AS name,
+          0 AS setoran,
+          0 AS penarikan,
+          0 AS pinjaman,
+          lp.amount AS cicilan
+        FROM loan_payments lp
+        JOIN loans l ON l.id = lp.loan_id
+        JOIN members m ON m.id = l.member_id
+        WHERE l.project_id = ?
+      ) x
+      GROUP BY x.tgl, x.name
+      ORDER BY x.tgl DESC, x.name ASC
+    ''',
+      [projectId, projectId, projectId],
+    );
+
+    for (final row in rekap) {
+      final tgl = row['tgl']?.toString() ?? '';
+      final nama = (row['name'] ?? '').toString().replaceAll(',', ' ');
+      final setoran = (row['setoran'] as num?)?.toDouble() ?? 0;
+      final penarikan = (row['penarikan'] as num?)?.toDouble() ?? 0;
+      final pinjaman = (row['pinjaman'] as num?)?.toDouble() ?? 0;
+      final cicilan = (row['cicilan'] as num?)?.toDouble() ?? 0;
+      buffer.writeln(
+        '${_fmtDate(tgl)},$nama,${setoran.toStringAsFixed(0)},${penarikan.toStringAsFixed(0)},${pinjaman.toStringAsFixed(0)},${cicilan.toStringAsFixed(0)}',
+      );
+    }
+
+    buffer.writeln();
+    buffer.writeln('=== DETAIL TABUNGAN ===');
     buffer.writeln('Nama Member,Tipe,Jumlah,Tanggal,Catatan');
 
     final savings = await db.rawQuery(
@@ -137,8 +207,22 @@ class ExportService {
 
     final loans = await db.rawQuery(
       '''
-      SELECT m.name, l.amount, l.interest_rate, l.total_amount,
-             l.paid_amount, l.status, l.loan_date, l.due_date, l.note
+      SELECT
+        m.name,
+        l.amount,
+        l.interest_rate,
+        l.total_amount,
+        -- "Terbayar" diambil dari cicilan yang berasal dari setoran tabungan (auto-potong)
+        COALESCE((
+          SELECT SUM(lp.amount)
+          FROM loan_payments lp
+          WHERE lp.loan_id = l.id
+            AND (lp.note LIKE '%tabungan%')
+        ), 0) AS paid_amount,
+        l.status,
+        l.loan_date,
+        l.due_date,
+        l.note
       FROM loans l JOIN members m ON m.id = l.member_id
       WHERE l.project_id = ?
       ORDER BY l.loan_date DESC
@@ -242,6 +326,61 @@ class ExportService {
       [projectId],
     );
 
+    // Rekap per tanggal (group by tgl + anggota)
+    final dateRecapRows = await db.rawQuery(
+      '''
+      SELECT
+        x.tgl,
+        x.name,
+        SUM(x.setoran)   AS setoran,
+        SUM(x.penarikan) AS penarikan,
+        SUM(x.pinjaman)  AS pinjaman,
+        SUM(x.cicilan)   AS cicilan
+      FROM (
+        SELECT
+          date(s.transaction_date) AS tgl,
+          m.name AS name,
+          CASE WHEN s.type = 'deposit' THEN s.amount ELSE 0 END AS setoran,
+          CASE WHEN s.type = 'withdrawal' THEN s.amount ELSE 0 END AS penarikan,
+          0 AS pinjaman,
+          0 AS cicilan
+        FROM savings s
+        JOIN members m ON m.id = s.member_id
+        WHERE s.project_id = ?
+
+        UNION ALL
+
+        SELECT
+          date(l.loan_date) AS tgl,
+          m.name AS name,
+          0 AS setoran,
+          0 AS penarikan,
+          l.total_amount AS pinjaman,
+          0 AS cicilan
+        FROM loans l
+        JOIN members m ON m.id = l.member_id
+        WHERE l.project_id = ?
+
+        UNION ALL
+
+        SELECT
+          date(lp.payment_date) AS tgl,
+          m.name AS name,
+          0 AS setoran,
+          0 AS penarikan,
+          0 AS pinjaman,
+          lp.amount AS cicilan
+        FROM loan_payments lp
+        JOIN loans l ON l.id = lp.loan_id
+        JOIN members m ON m.id = l.member_id
+        WHERE l.project_id = ?
+      ) x
+      GROUP BY x.tgl, x.name
+      ORDER BY x.tgl DESC, x.name ASC
+    ''',
+      [projectId, projectId, projectId],
+    );
+
     // Ambil 20 transaksi terakhir
     final recentSavings = await db.rawQuery(
       '''
@@ -255,7 +394,17 @@ class ExportService {
 
     final recentLoans = await db.rawQuery(
       '''
-      SELECT m.name, l.total_amount, l.paid_amount, l.status, l.loan_date
+      SELECT
+        m.name,
+        l.total_amount,
+        COALESCE((
+          SELECT SUM(lp.amount)
+          FROM loan_payments lp
+          WHERE lp.loan_id = l.id
+            AND (lp.note LIKE '%tabungan%')
+        ), 0) AS paid_amount,
+        l.status,
+        l.loan_date
       FROM loans l JOIN members m ON m.id = l.member_id
       WHERE l.project_id = ?
       ORDER BY l.loan_date DESC LIMIT 20
@@ -452,20 +601,113 @@ class ExportService {
                           : null,
                       children: [
                         _pdfTd(row['name']?.toString() ?? ''),
-                        _pdfTd(_fmt(savings), color: successColor),
+                        _pdfTd(_fmt(savings)),
                         _pdfTd(
                           _fmt(hutang),
-                          color: hutang > 0 ? errorColor : PdfColors.grey700,
+                          color: hutang > 0 ? PdfColors.grey900 : PdfColors.grey700,
                         ),
                         _pdfTd(
                           _fmt(saldo),
-                          color: isNeg ? errorColor : successColor,
+                          color: isNeg ? PdfColors.grey900 : PdfColors.grey900,
                         ),
                       ],
                     );
                   }),
                 ],
               ),
+
+              pw.SizedBox(height: 18),
+              pw.Text(
+                'REKAP PER TANGGAL',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                  color: primaryColor,
+                ),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'Format pivot: 1 baris per anggota, kolom per tanggal (Net = Setor + Cicil - Tarik - Pinjam).',
+                style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+              ),
+              pw.SizedBox(height: 8),
+              if (dateRecapRows.isEmpty)
+                pw.Text('-', style: const pw.TextStyle(fontSize: 9))
+              else
+                (() {
+                  // Ambil daftar tanggal (maks 7) dari rekap, urut desc
+                  final dates = <String>[];
+                  for (final row in dateRecapRows) {
+                    final raw = row['tgl']?.toString();
+                    if (raw == null || raw.isEmpty) continue;
+                    if (!dates.contains(raw)) dates.add(raw);
+                    if (dates.length >= 7) break;
+                  }
+
+                  // Map: memberName -> dateRaw -> net
+                  final netMap = <String, Map<String, double>>{};
+                  for (final row in dateRecapRows) {
+                    final raw = row['tgl']?.toString() ?? '';
+                    if (!dates.contains(raw)) continue;
+                    final name = row['name']?.toString() ?? '';
+                    final setoran = (row['setoran'] as num?)?.toDouble() ?? 0;
+                    final penarikan = (row['penarikan'] as num?)?.toDouble() ?? 0;
+                    final pinjaman = (row['pinjaman'] as num?)?.toDouble() ?? 0;
+                    final cicilan = (row['cicilan'] as num?)?.toDouble() ?? 0;
+                    final net = setoran + cicilan - penarikan - pinjaman;
+                    (netMap[name] ??= {})[raw] = net;
+                  }
+
+                  // List anggota: dari memberRows supaya konsisten dengan rekap anggota
+                  final memberNames = memberRows
+                      .map((r) => r['name']?.toString() ?? '')
+                      .where((s) => s.trim().isNotEmpty)
+                      .toList();
+
+                  final colWidths = <int, pw.TableColumnWidth>{
+                    0: const pw.FlexColumnWidth(0.7), // No
+                    1: const pw.FlexColumnWidth(2.2), // Anggota
+                  };
+                  for (int i = 0; i < dates.length; i++) {
+                    colWidths[i + 2] = const pw.FlexColumnWidth(1.3);
+                  }
+
+                  return pw.Table(
+                    border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+                    columnWidths: colWidths,
+                    children: [
+                      pw.TableRow(
+                        decoration: const pw.BoxDecoration(color: primaryColor),
+                        children: [
+                          _pdfTh('No'),
+                          _pdfTh('Anggota'),
+                          ...dates.map((d) {
+                            final label = _fmtDate(d);
+                            // tampilkan versi pendek biar muat
+                            final shortLabel = label.length > 6 ? label.substring(0, 6) : label;
+                            return _pdfTh(shortLabel);
+                          }),
+                        ],
+                      ),
+                      ...memberNames.asMap().entries.map((e) {
+                        final idx = e.key + 1;
+                        final name = e.value;
+                        final byDate = netMap[name] ?? const {};
+                        return pw.TableRow(
+                          decoration: idx.isEven ? const pw.BoxDecoration(color: bgColor) : null,
+                          children: [
+                            _pdfTd(idx.toString()),
+                            _pdfTd(name),
+                            ...dates.map((d) {
+                              final v = byDate[d] ?? 0;
+                              return _pdfTd(v == 0 ? '-' : _fmt(v));
+                            }),
+                          ],
+                        );
+                      }),
+                    ],
+                  );
+                })(),
             ],
           );
         },
@@ -678,8 +920,20 @@ class ExportService {
     );
     final loans = await db.rawQuery(
       '''
-      SELECT l.amount, l.interest_rate, l.total_amount, l.paid_amount,
-             l.status, l.loan_date, l.due_date, l.note
+      SELECT
+        l.amount,
+        l.interest_rate,
+        l.total_amount,
+        COALESCE((
+          SELECT SUM(lp.amount)
+          FROM loan_payments lp
+          WHERE lp.loan_id = l.id
+            AND (lp.note LIKE '%tabungan%')
+        ), 0) AS paid_amount,
+        l.status,
+        l.loan_date,
+        l.due_date,
+        l.note
       FROM loans l
       WHERE l.member_id = ?
       ORDER BY l.loan_date DESC
@@ -787,7 +1041,18 @@ class ExportService {
 
     final loans = await db.rawQuery(
       '''
-      SELECT l.total_amount, l.paid_amount, l.status, l.loan_date, l.due_date, l.note
+      SELECT
+        l.total_amount,
+        COALESCE((
+          SELECT SUM(lp.amount)
+          FROM loan_payments lp
+          WHERE lp.loan_id = l.id
+            AND (lp.note LIKE '%tabungan%')
+        ), 0) AS paid_amount,
+        l.status,
+        l.loan_date,
+        l.due_date,
+        l.note
       FROM loans l
       WHERE l.member_id = ?
       ORDER BY l.loan_date DESC
@@ -1095,9 +1360,9 @@ pw.Widget _pdfStatBox(
     child: pw.Container(
       padding: const pw.EdgeInsets.all(10),
       decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: color, width: 1),
+        border: pw.Border.all(color: PdfColors.grey400, width: 1),
         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
-        color: PdfColor(color.red, color.green, color.blue, 0.08),
+        color: PdfColors.white,
       ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -1112,7 +1377,7 @@ pw.Widget _pdfStatBox(
             style: pw.TextStyle(
               fontSize: 10,
               fontWeight: pw.FontWeight.bold,
-              color: color,
+              color: PdfColors.black,
             ),
           ),
         ],
