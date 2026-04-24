@@ -7,6 +7,7 @@ import 'package:baitul_mal_plus/domain/models/saving_model.dart';
 import 'package:baitul_mal_plus/domain/models/loan_model.dart';
 import 'package:baitul_mal_plus/domain/models/project_cashflow_model.dart';
 import 'package:baitul_mal_plus/domain/repositories/member_repository.dart';
+import 'package:sqflite/sqlite_api.dart' show DatabaseExecutor;
 
 class MemberRepositoryImpl implements MemberRepository {
   final DatabaseHelper _db = DatabaseHelper();
@@ -124,6 +125,8 @@ class MemberRepositoryImpl implements MemberRepository {
   @override
   Future<List<LoanModel>> getLoansByMember(int memberId) async {
     final db = await _db.database;
+    // Sinkronisasi auto-potong agar pinjaman lama juga terbayar dari tabungan yang sudah ada.
+    await _syncAutoPaymentFromSavings(db, memberId);
     final rows = await db.query(
       'loans',
       where: 'member_id = ?',
@@ -151,7 +154,10 @@ class MemberRepositoryImpl implements MemberRepository {
   @override
   Future<void> addLoan(LoanModel loan) async {
     final db = await _db.database;
-    await db.insert('loans', loan.toMap());
+    await db.transaction((txn) async {
+      await txn.insert('loans', loan.toMap());
+      await _syncAutoPaymentFromSavings(txn, loan.memberId);
+    });
   }
 
   @override
@@ -346,5 +352,67 @@ class MemberRepositoryImpl implements MemberRepository {
 
     if (rows.isEmpty) return null;
     return ProjectCashflowModel.fromMap(rows.first);
+  }
+
+  /// Sinkronisasi auto-potong dari tabungan bersih member ke pinjaman aktif.
+  /// Idempotent: hanya memakai sisa budget auto-potong yang belum dipakai.
+  Future<void> _syncAutoPaymentFromSavings(DatabaseExecutor db, int memberId) async {
+    final netSavingsRows = await db.rawQuery(
+      '''
+      SELECT
+        COALESCE(SUM(CASE WHEN type = 'deposit' THEN amount ELSE 0 END), 0)
+        - COALESCE(SUM(CASE WHEN type = 'withdrawal' THEN amount ELSE 0 END), 0)
+        AS net_savings
+      FROM savings
+      WHERE member_id = ?
+    ''',
+      [memberId],
+    );
+    final netSavings =
+        (netSavingsRows.first['net_savings'] as num?)?.toDouble() ?? 0;
+    if (netSavings <= 0) return;
+
+    final autoPaidRows = await db.rawQuery(
+      '''
+      SELECT COALESCE(SUM(lp.amount), 0) AS auto_paid
+      FROM loan_payments lp
+      JOIN loans l ON l.id = lp.loan_id
+      WHERE l.member_id = ?
+        AND lp.note LIKE 'Auto-potong dari tabungan%'
+    ''',
+      [memberId],
+    );
+    final autoPaid = (autoPaidRows.first['auto_paid'] as num?)?.toDouble() ?? 0;
+
+    double remainingBudget = netSavings - autoPaid;
+    if (remainingBudget <= 0) return;
+
+    final activeLoans = await db.query(
+      'loans',
+      where: 'member_id = ? AND status = ?',
+      whereArgs: [memberId, 'active'],
+      orderBy: 'loan_date ASC',
+    );
+
+    for (final loan in activeLoans) {
+      if (remainingBudget <= 0) break;
+
+      final loanId = loan['id'] as int;
+      final total = (loan['total_amount'] as num?)?.toDouble() ?? 0;
+      final paid = (loan['paid_amount'] as num?)?.toDouble() ?? 0;
+      final unpaid = total - paid;
+      if (unpaid <= 0) continue;
+
+      final payment = remainingBudget >= unpaid ? unpaid : remainingBudget;
+      remainingBudget -= payment;
+      if (payment <= 0) continue;
+
+      await db.insert('loan_payments', {
+        'loan_id': loanId,
+        'amount': payment,
+        'note': 'Auto-potong dari tabungan (sinkronisasi)',
+        'payment_date': DateTime.now().toIso8601String(),
+      });
+    }
   }
 }
