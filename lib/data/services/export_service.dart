@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:baitul_mal_plus/data/source/local/database_helper.dart';
 
 // PDF
 import 'package:pdf/pdf.dart';
@@ -35,9 +36,7 @@ class ExportService {
   /// Ekspor seluruh database sebagai file SQL dump
   /// Berguna untuk backup lengkap & restore
   static Future<File> exportSql({int? projectId}) async {
-    final db = await openDatabase(
-      p.join(await getDatabasesPath(), 'baitul_mal.db'),
-    );
+    final db = await DatabaseHelper().database;
 
     final buffer = StringBuffer();
     buffer.writeln('-- Baitul Mal Plus — SQL Backup');
@@ -87,8 +86,6 @@ class ExportService {
       buffer.writeln();
     }
 
-    await db.close();
-
     final dir = await getApplicationDocumentsDirectory();
     final fileName = projectId != null
         ? 'backup_project_${projectId}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.sql'
@@ -100,9 +97,7 @@ class ExportService {
 
   /// Ekspor data ke CSV
   static Future<File> exportCsv({required int projectId}) async {
-    final db = await openDatabase(
-      p.join(await getDatabasesPath(), 'baitul_mal.db'),
-    );
+    final db = await DatabaseHelper().database;
 
     final buffer = StringBuffer();
 
@@ -275,8 +270,6 @@ class ExportService {
       );
     }
 
-    await db.close();
-
     final dir = await getApplicationDocumentsDirectory();
     final fileName =
         'export_project_${projectId}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.csv';
@@ -287,9 +280,7 @@ class ExportService {
 
   /// Ekspor laporan ke PDF
   static Future<File> exportPdf({required int projectId}) async {
-    final db = await openDatabase(
-      p.join(await getDatabasesPath(), 'baitul_mal.db'),
-    );
+    final db = await DatabaseHelper().database;
 
     // Ambil nama project
     final projectRows = await db.query(
@@ -411,8 +402,6 @@ class ExportService {
     ''',
       [projectId],
     );
-
-    await db.close();
 
     // Build PDF
     final pdf = pw.Document();
@@ -866,9 +855,7 @@ class ExportService {
 
   /// Ekspor data 1 member ke CSV
   static Future<File> exportMemberCsv({required int memberId}) async {
-    final db = await openDatabase(
-      p.join(await getDatabasesPath(), 'baitul_mal.db'),
-    );
+    final db = await DatabaseHelper().database;
 
     final memberInfo = await db.rawQuery(
       '''
@@ -880,7 +867,6 @@ class ExportService {
     );
 
     if (memberInfo.isEmpty) {
-      await db.close();
       throw Exception('Member tidak ditemukan');
     }
 
@@ -980,8 +966,6 @@ class ExportService {
       );
     }
 
-    await db.close();
-
     final dir = await getApplicationDocumentsDirectory();
     final safeMember = memberName.replaceAll(' ', '_');
     final fileName =
@@ -993,9 +977,7 @@ class ExportService {
 
   /// Ekspor laporan 1 member ke PDF
   static Future<File> exportMemberPdf({required int memberId}) async {
-    final db = await openDatabase(
-      p.join(await getDatabasesPath(), 'baitul_mal.db'),
-    );
+    final db = await DatabaseHelper().database;
 
     final memberInfo = await db.rawQuery(
       '''
@@ -1006,7 +988,6 @@ class ExportService {
       [memberId],
     );
     if (memberInfo.isEmpty) {
-      await db.close();
       throw Exception('Member tidak ditemukan');
     }
 
@@ -1059,8 +1040,6 @@ class ExportService {
     ''',
       [memberId],
     );
-
-    await db.close();
 
     final pdf = pw.Document();
     final now = DateFormat('dd MMMM yyyy HH:mm', 'id_ID').format(DateTime.now());
