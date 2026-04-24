@@ -29,15 +29,31 @@ jobs:
           channel: "stable"
           cache: true
 
+      - name: Show Flutter/Dart version
+        run: |
+          flutter --version
+          dart --version
+
       # 4. Dependencies
-      - run: flutter pub get
+      # Pakai lockfile supaya versi package konsisten (hindari conflict karena re-resolve)
+      - run: flutter pub get --enforce-lockfile
 
       # 5. 🔍 Ambil version dari pubspec
       - name: Get version
         id: version
         run: |
-          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //g' | cut -d '+' -f1)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          # pubspec.yaml: version: x.y.z+build
+          RAW=$(grep '^version:' pubspec.yaml | sed 's/version: //g' | tr -d ' ')
+          VERSION_NAME=$(echo "$RAW" | cut -d '+' -f1)
+          # Jika pubspec tidak punya +build, pakai github.run_number sebagai versionCode
+          VERSION_CODE=$(echo "$RAW" | awk -F'+' '{print $2}')
+          if [ -z "$VERSION_CODE" ]; then
+            VERSION_CODE="${{ github.run_number }}"
+          fi
+          echo "version=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "Using versionName=$VERSION_NAME versionCode=$VERSION_CODE"
 
       # 6. 🔐 Inject keystore
       - name: Decode keystore
@@ -51,7 +67,11 @@ jobs:
           echo "storeFile=../app/upload-keystore.jks" >> android/key.properties
 
       # 7. Build
-      - run: flutter build apk --release
+      - name: Build APK (release)
+        run: |
+          flutter build apk --release \
+            --build-name "${{ steps.version.outputs.version_name }}" \
+            --build-number "${{ steps.version.outputs.version_code }}"
 
       # 8. 🧾 Generate changelog (from last tag, grouped by Conventional Commits)
       - name: Generate changelog
