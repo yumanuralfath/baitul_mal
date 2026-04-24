@@ -18,11 +18,20 @@ class MemberRepositoryImpl implements MemberRepository {
     final rows = await db.rawQuery(
       '''
       SELECT m.*,
-        COALESCE(vs.net_savings, 0) AS net_savings,
+        COALESCE(vs.net_savings, 0) - COALESCE(ap.auto_potong, 0) AS net_savings,
         COALESCE(vl.sisa_hutang, 0) AS sisa_hutang
       FROM members m
       LEFT JOIN v_member_savings vs ON vs.member_id = m.id
       LEFT JOIN v_member_loans   vl ON vl.member_id = m.id
+      LEFT JOIN (
+        SELECT
+          l.member_id,
+          COALESCE(SUM(lp.amount), 0) AS auto_potong
+        FROM loan_payments lp
+        JOIN loans l ON l.id = lp.loan_id
+        WHERE lp.note LIKE 'Auto-potong dari tabungan%'
+        GROUP BY l.member_id
+      ) ap ON ap.member_id = m.id
       WHERE m.project_id = ? AND m.is_active = 1
       ORDER BY m.name ASC
     ''',
