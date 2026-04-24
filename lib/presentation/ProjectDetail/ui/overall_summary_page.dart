@@ -1,7 +1,9 @@
 // lib/presentation/project_detail/screens/overall_summary_page.dart
+// (Versi update — tambah daily stats di tab Per Tanggal + tombol export di AppBar)
 
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'package:baitul_mal_plus/presentation/ProjectDetail/widget/export_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:baitul_mal_plus/domain/models/project_model.dart';
@@ -16,9 +18,6 @@ final _nf = NumberFormat.currency(
 );
 String _fmt(double v) => _nf.format(v);
 
-// ═══════════════════════════════════════════════════════════════
-// OVERALL SUMMARY PAGE
-// ═══════════════════════════════════════════════════════════════
 class OverallSummaryPage extends StatefulWidget {
   final ProjectModel project;
   const OverallSummaryPage({super.key, required this.project});
@@ -30,13 +29,9 @@ class OverallSummaryPage extends StatefulWidget {
 class _OverallSummaryPageState extends State<OverallSummaryPage>
     with SingleTickerProviderStateMixin {
   final MemberRepository _repo = MemberRepositoryImpl();
-
-  // null = tampilkan semua (keseluruhan)
   DateTime? _filterDate;
-
   late Future<ProjectCashflowModel?> _allTimeFuture;
   late Future<ProjectCashflowModel?> _dateFuture;
-
   late TabController _tabCtrl;
 
   @override
@@ -57,7 +52,7 @@ class _OverallSummaryPageState extends State<OverallSummaryPage>
       _allTimeFuture = _repo.getProjectCashflow(widget.project.id!);
       _dateFuture = _filterDate != null
           ? _repo.getProjectCashflowByDate(widget.project.id!, _filterDate!)
-          : _repo.getProjectCashflow(widget.project.id!);
+          : Future.value(null);
     });
   }
 
@@ -79,6 +74,19 @@ class _OverallSummaryPageState extends State<OverallSummaryPage>
     _load();
   }
 
+  void _showExportSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => ExportSheet(
+        projectId: widget.project.id!,
+        projectName: widget.project.name,
+        onImportSuccess: _load,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasFilter = _filterDate != null;
@@ -86,22 +94,22 @@ class _OverallSummaryPageState extends State<OverallSummaryPage>
 
     return Column(
       children: [
-        // Filter bar
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        // Tab bar + export button
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
           child: Row(
             children: [
               Expanded(
                 child: TabBar(
                   controller: _tabCtrl,
                   tabs: [
-                    Tab(
+                    const Tab(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.all_inclusive, size: 16),
-                          const SizedBox(width: 6),
-                          const Text('Keseluruhan'),
+                          Icon(Icons.all_inclusive, size: 16),
+                          SizedBox(width: 6),
+                          Text('Keseluruhan'),
                         ],
                       ),
                     ),
@@ -132,6 +140,12 @@ class _OverallSummaryPageState extends State<OverallSummaryPage>
                   ],
                 ),
               ),
+              // Export button
+              IconButton(
+                icon: const Icon(Icons.import_export),
+                onPressed: _showExportSheet,
+                tooltip: 'Ekspor & Impor',
+              ),
             ],
           ),
         ),
@@ -143,7 +157,7 @@ class _OverallSummaryPageState extends State<OverallSummaryPage>
               _SummaryView(
                 future: _allTimeFuture,
                 onRefresh: _load,
-                title: 'Semua Transaksi',
+                showDailyStats: false,
               ),
               // Tab 2: Per Tanggal
               _DateFilterView(
@@ -161,16 +175,16 @@ class _OverallSummaryPageState extends State<OverallSummaryPage>
   }
 }
 
-// ─── Summary View (shared by both tabs) ──────────────────────
+// ─── Summary View ─────────────────────────────────────────────
 class _SummaryView extends StatelessWidget {
   final Future<ProjectCashflowModel?> future;
   final VoidCallback onRefresh;
-  final String title;
+  final bool showDailyStats;
 
   const _SummaryView({
     required this.future,
     required this.onRefresh,
-    required this.title,
+    this.showDailyStats = false,
   });
 
   @override
@@ -187,7 +201,7 @@ class _SummaryView extends StatelessWidget {
         }
         return RefreshIndicator(
           onRefresh: () async => onRefresh(),
-          child: _SummaryContent(cashflow: cf),
+          child: _SummaryContent(cashflow: cf, showDailyStats: showDailyStats),
         );
       },
     );
@@ -217,7 +231,7 @@ class _DateFilterView extends StatelessWidget {
 
     return Column(
       children: [
-        // Date picker banner
+        // Date picker bar
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: Row(
@@ -257,13 +271,13 @@ class _DateFilterView extends StatelessWidget {
         ),
         if (hasFilter)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: Row(
               children: [
-                Icon(Icons.info_outline, size: 14, color: cs.outline),
+                Icon(Icons.info_outline, size: 13, color: cs.outline),
                 const SizedBox(width: 4),
                 Text(
-                  'Menampilkan transaksi s/d ${DateFormat('dd MMM yyyy', 'id_ID').format(filterDate!)}',
+                  'Kumulatif s/d ${DateFormat('dd MMM yyyy', 'id_ID').format(filterDate!)}',
                   style: Theme.of(
                     context,
                   ).textTheme.labelSmall?.copyWith(color: cs.outline),
@@ -285,7 +299,11 @@ class _DateFilterView extends StatelessWidget {
                     }
                     return RefreshIndicator(
                       onRefresh: () async => onRefresh(),
-                      child: _SummaryContent(cashflow: cf),
+                      child: _SummaryContent(
+                        cashflow: cf,
+                        showDailyStats: true,
+                        filterDate: filterDate,
+                      ),
                     );
                   },
                 )
@@ -321,7 +339,14 @@ class _DateFilterView extends StatelessWidget {
 // ─── Summary Content ──────────────────────────────────────────
 class _SummaryContent extends StatelessWidget {
   final ProjectCashflowModel cashflow;
-  const _SummaryContent({required this.cashflow});
+  final bool showDailyStats;
+  final DateTime? filterDate;
+
+  const _SummaryContent({
+    required this.cashflow,
+    this.showDailyStats = false,
+    this.filterDate,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -331,6 +356,15 @@ class _SummaryContent extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // Daily stats card (hanya di tab per tanggal)
+        if (showDailyStats && filterDate != null)
+          DailyStatsCard(
+            setoranHariIni: cashflow.setoranHariIni ?? 0,
+            pinjamanHariIni: cashflow.pinjamanHariIni ?? 0,
+            pembayaranHariIni: cashflow.pembayaranHariIni ?? 0,
+            date: filterDate!,
+          ),
+
         PieChartCard(cashflow: cashflow),
         const SizedBox(height: 16),
         GridView.count(
@@ -408,7 +442,7 @@ class _SummaryContent extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// PIE CHART CARD
+// PIE CHART (sama seperti sebelumnya)
 // ═══════════════════════════════════════════════════════════════
 class PieChartCard extends StatefulWidget {
   final ProjectCashflowModel cashflow;
@@ -581,13 +615,11 @@ class DonutChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final total = segments.fold(0.0, (s, e) => s + e.value);
     if (total == 0) return;
-
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.shortestSide / 2 - 4;
     final holeRadius = radius * 0.54;
     const startAngle = -math.pi / 2;
     const gapAngle = 0.03;
-
     double currentAngle = startAngle;
     final outerRect = Rect.fromCircle(center: center, radius: radius);
 
@@ -597,8 +629,6 @@ class DonutChartPainter extends CustomPainter {
         currentAngle += (seg.value / total) * 2 * math.pi * progress;
         continue;
       }
-
-      // Shadow
       canvas.drawArc(
         Rect.fromCircle(center: center + const Offset(2, 3), radius: radius),
         currentAngle,
@@ -608,8 +638,6 @@ class DonutChartPainter extends CustomPainter {
           ..color = seg.color.withValues(alpha: 0.25)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
       );
-
-      // Segment
       canvas.drawArc(
         outerRect,
         currentAngle,
@@ -617,14 +645,12 @@ class DonutChartPainter extends CustomPainter {
         true,
         Paint()..color = seg.color,
       );
-
-      // Label persen
       if (progress >= 1.0 && seg.value / total > 0.08) {
         final midAngle = currentAngle + sweep / 2;
-        final labelRadius = (radius + holeRadius) / 2;
-        final labelPos = Offset(
-          center.dx + labelRadius * math.cos(midAngle),
-          center.dy + labelRadius * math.sin(midAngle),
+        final lr = (radius + holeRadius) / 2;
+        final pos = Offset(
+          center.dx + lr * math.cos(midAngle),
+          center.dy + lr * math.sin(midAngle),
         );
         final tp = TextPainter(
           text: TextSpan(
@@ -638,12 +664,10 @@ class DonutChartPainter extends CustomPainter {
           ),
           textDirection: ui.TextDirection.ltr,
         )..layout();
-        tp.paint(canvas, labelPos - Offset(tp.width / 2, tp.height / 2));
+        tp.paint(canvas, pos - Offset(tp.width / 2, tp.height / 2));
       }
-
       currentAngle += (seg.value / total) * 2 * math.pi * progress + gapAngle;
     }
-
     canvas.drawCircle(center, holeRadius, Paint()..color = backgroundColor);
     canvas.drawCircle(
       center,
@@ -664,7 +688,6 @@ class LegendTile extends StatelessWidget {
   final String label;
   final String value;
   final String percent;
-
   const LegendTile({
     super.key,
     required this.color,
@@ -728,7 +751,6 @@ class _InfoCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final Color onColor;
-
   const _InfoCard({
     required this.label,
     required this.value,
@@ -777,7 +799,6 @@ class _DetailRow extends StatelessWidget {
   final double value;
   final bool isPositive;
   final bool isBold;
-
   const _DetailRow(
     this.label,
     this.value, {
