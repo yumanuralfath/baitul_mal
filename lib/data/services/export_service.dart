@@ -101,9 +101,8 @@ class ExportService {
 
     final buffer = StringBuffer();
 
-    // REKAP PER TANGGAL (lebih mudah dibaca: nama tidak berulang per transaksi)
-    buffer.writeln('=== REKAP PER TANGGAL ===');
-    buffer.writeln('Tanggal,Nama Member,Setoran,Penarikan,Pinjaman,Cicilan');
+    // REKAP PIVOT PER BULAN (kolom = tanggal, baris = anggota)
+    buffer.writeln('=== REKAP PIVOT PER BULAN ===');
 
     final rekap = await db.rawQuery(
       '''
@@ -159,16 +158,69 @@ class ExportService {
       [projectId, projectId, projectId],
     );
 
+    final monthMap = <String, List<Map<String, dynamic>>>{};
     for (final row in rekap) {
-      final tgl = row['tgl']?.toString() ?? '';
-      final nama = (row['name'] ?? '').toString().replaceAll(',', ' ');
-      final setoran = (row['setoran'] as num?)?.toDouble() ?? 0;
-      final penarikan = (row['penarikan'] as num?)?.toDouble() ?? 0;
-      final pinjaman = (row['pinjaman'] as num?)?.toDouble() ?? 0;
-      final cicilan = (row['cicilan'] as num?)?.toDouble() ?? 0;
-      buffer.writeln(
-        '${_fmtDate(tgl)},$nama,${setoran.toStringAsFixed(0)},${penarikan.toStringAsFixed(0)},${pinjaman.toStringAsFixed(0)},${cicilan.toStringAsFixed(0)}',
-      );
+      final rawDate = row['tgl']?.toString() ?? '';
+      if (rawDate.length < 7) continue;
+      final monthKey = rawDate.substring(0, 7); // yyyy-MM
+      (monthMap[monthKey] ??= []).add(row);
+    }
+
+    final monthKeys = monthMap.keys.toList()..sort((a, b) => b.compareTo(a));
+    for (final month in monthKeys) {
+      final rows = monthMap[month]!;
+      final monthLabel = DateFormat(
+        'MMMM yyyy',
+        'id_ID',
+      ).format(DateTime.parse('$month-01'));
+      buffer.writeln();
+      buffer.writeln('--- BULAN: $monthLabel ---');
+
+      final dates = rows
+          .map((r) => r['tgl']?.toString() ?? '')
+          .where((d) => d.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+
+      final names = rows
+          .map((r) => (r['name'] ?? '').toString())
+          .where((n) => n.trim().isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+
+      final netByNameDate = <String, Map<String, double>>{};
+      for (final r in rows) {
+        final d = r['tgl']?.toString() ?? '';
+        final n = (r['name'] ?? '').toString();
+        final setoran = (r['setoran'] as num?)?.toDouble() ?? 0;
+        final penarikan = (r['penarikan'] as num?)?.toDouble() ?? 0;
+        final pinjaman = (r['pinjaman'] as num?)?.toDouble() ?? 0;
+        final cicilan = (r['cicilan'] as num?)?.toDouble() ?? 0;
+        final net = setoran + cicilan - penarikan - pinjaman;
+        (netByNameDate[n] ??= {})[d] = net;
+      }
+
+      final dateHeaders = dates
+          .map((d) => DateFormat('dd MMM', 'id_ID').format(DateTime.parse(d)))
+          .join(',');
+      buffer.writeln('No,Nama,$dateHeaders,Total Net');
+
+      for (int i = 0; i < names.length; i++) {
+        final name = names[i];
+        final byDate = netByNameDate[name] ?? const {};
+        double totalNet = 0;
+        final values = <String>[];
+        for (final d in dates) {
+          final v = byDate[d] ?? 0;
+          totalNet += v;
+          values.add(v == 0 ? '-' : v.toStringAsFixed(0));
+        }
+        buffer.writeln(
+          '${i + 1},${name.replaceAll(',', ' ')},${values.join(',')},${totalNet.toStringAsFixed(0)}',
+        );
+      }
     }
 
     buffer.writeln();
@@ -305,12 +357,22 @@ class ExportService {
       '''
       SELECT
         m.name,
-        COALESCE(vs.net_savings, 0)  AS net_savings,
+        COALESCE(vs.net_savings, 0) - COALESCE(ap.auto_potong, 0) AS net_savings,
         COALESCE(vl.sisa_hutang, 0)  AS sisa_hutang,
-        COALESCE(vs.net_savings, 0) - COALESCE(vl.sisa_hutang, 0) AS saldo_efektif
+        (COALESCE(vs.net_savings, 0) - COALESCE(ap.auto_potong, 0))
+          - COALESCE(vl.sisa_hutang, 0) AS saldo_efektif
       FROM members m
       LEFT JOIN v_member_savings vs ON vs.member_id = m.id
       LEFT JOIN v_member_loans   vl ON vl.member_id = m.id
+      LEFT JOIN (
+        SELECT
+          l.member_id,
+          COALESCE(SUM(lp.amount), 0) AS auto_potong
+        FROM loan_payments lp
+        JOIN loans l ON l.id = lp.loan_id
+        WHERE lp.note LIKE 'Auto-potong dari tabungan%'
+        GROUP BY l.member_id
+      ) ap ON ap.member_id = m.id
       WHERE m.project_id = ? AND m.is_active = 1
       ORDER BY m.name ASC
     ''',
@@ -379,6 +441,25 @@ class ExportService {
       FROM savings s JOIN members m ON m.id = s.member_id
       WHERE s.project_id = ?
       ORDER BY s.transaction_date DESC LIMIT 20
+    ''',
+      [projectId],
+    );
+
+    final savingsPivotRows = await db.rawQuery(
+      '''
+      SELECT
+        date(s.transaction_date) AS tgl,
+        m.name AS name,
+        SUM(
+          CASE WHEN s.type = 'deposit' THEN s.amount
+               WHEN s.type = 'withdrawal' THEN -s.amount
+               ELSE 0 END
+        ) AS net_tabungan
+      FROM savings s
+      JOIN members m ON m.id = s.member_id
+      WHERE s.project_id = ?
+      GROUP BY date(s.transaction_date), m.name
+      ORDER BY date(s.transaction_date) DESC, m.name ASC
     ''',
       [projectId],
     );
@@ -607,7 +688,7 @@ class ExportService {
 
               pw.SizedBox(height: 18),
               pw.Text(
-                'REKAP PER TANGGAL',
+                'REKAP PIVOT PER BULAN',
                 style: pw.TextStyle(
                   fontSize: 11,
                   fontWeight: pw.FontWeight.bold,
@@ -616,7 +697,7 @@ class ExportService {
               ),
               pw.SizedBox(height: 4),
               pw.Text(
-                'Format pivot: 1 baris per anggota, kolom per tanggal (Net = Setor + Cicil - Tarik - Pinjam).',
+                '1 baris per anggota. Kolom tanggal dipisah tiap bulan.',
                 style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
               ),
               pw.SizedBox(height: 8),
@@ -624,77 +705,124 @@ class ExportService {
                 pw.Text('-', style: const pw.TextStyle(fontSize: 9))
               else
                 (() {
-                  // Ambil daftar tanggal (maks 7) dari rekap, urut desc
-                  final dates = <String>[];
-                  for (final row in dateRecapRows) {
-                    final raw = row['tgl']?.toString();
-                    if (raw == null || raw.isEmpty) continue;
-                    if (!dates.contains(raw)) dates.add(raw);
-                    if (dates.length >= 7) break;
-                  }
-
-                  // Map: memberName -> dateRaw -> net
-                  final netMap = <String, Map<String, double>>{};
+                  final monthMap = <String, List<Map<String, dynamic>>>{};
                   for (final row in dateRecapRows) {
                     final raw = row['tgl']?.toString() ?? '';
-                    if (!dates.contains(raw)) continue;
-                    final name = row['name']?.toString() ?? '';
-                    final setoran = (row['setoran'] as num?)?.toDouble() ?? 0;
-                    final penarikan = (row['penarikan'] as num?)?.toDouble() ?? 0;
-                    final pinjaman = (row['pinjaman'] as num?)?.toDouble() ?? 0;
-                    final cicilan = (row['cicilan'] as num?)?.toDouble() ?? 0;
-                    final net = setoran + cicilan - penarikan - pinjaman;
-                    (netMap[name] ??= {})[raw] = net;
+                    if (raw.length < 7) continue;
+                    final month = raw.substring(0, 7);
+                    (monthMap[month] ??= []).add(row);
                   }
+                  final monthKeys = monthMap.keys.toList()
+                    ..sort((a, b) => b.compareTo(a));
 
-                  // List anggota: dari memberRows supaya konsisten dengan rekap anggota
-                  final memberNames = memberRows
-                      .map((r) => r['name']?.toString() ?? '')
-                      .where((s) => s.trim().isNotEmpty)
-                      .toList();
+                  final widgets = <pw.Widget>[];
+                  for (final month in monthKeys.take(3)) {
+                    final monthRows = monthMap[month]!;
+                    final monthLabel = DateFormat(
+                      'MMMM yyyy',
+                      'id_ID',
+                    ).format(DateTime.parse('$month-01'));
 
-                  final colWidths = <int, pw.TableColumnWidth>{
-                    0: const pw.FlexColumnWidth(0.7), // No
-                    1: const pw.FlexColumnWidth(2.2), // Anggota
-                  };
-                  for (int i = 0; i < dates.length; i++) {
-                    colWidths[i + 2] = const pw.FlexColumnWidth(1.3);
-                  }
+                    final dates = monthRows
+                        .map((r) => r['tgl']?.toString() ?? '')
+                        .where((d) => d.isNotEmpty)
+                        .toSet()
+                        .toList()
+                      ..sort();
 
-                  return pw.Table(
-                    border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-                    columnWidths: colWidths,
-                    children: [
-                      pw.TableRow(
-                        decoration: const pw.BoxDecoration(color: primaryColor),
+                    final names = memberRows
+                        .map((r) => r['name']?.toString() ?? '')
+                        .where((s) => s.trim().isNotEmpty)
+                        .toList();
+
+                    final netMap = <String, Map<String, double>>{};
+                    for (final row in monthRows) {
+                      final raw = row['tgl']?.toString() ?? '';
+                      final name = row['name']?.toString() ?? '';
+                      final setoran =
+                          (row['setoran'] as num?)?.toDouble() ?? 0;
+                      final penarikan =
+                          (row['penarikan'] as num?)?.toDouble() ?? 0;
+                      final pinjaman =
+                          (row['pinjaman'] as num?)?.toDouble() ?? 0;
+                      final cicilan =
+                          (row['cicilan'] as num?)?.toDouble() ?? 0;
+                      final net = setoran + cicilan - penarikan - pinjaman;
+                      (netMap[name] ??= {})[raw] = net;
+                    }
+
+                    final shownDates = dates.length > 7
+                        ? dates.sublist(dates.length - 7)
+                        : dates;
+
+                    final colWidths = <int, pw.TableColumnWidth>{
+                      0: const pw.FlexColumnWidth(0.7),
+                      1: const pw.FlexColumnWidth(2.2),
+                    };
+                    for (int i = 0; i < shownDates.length; i++) {
+                      colWidths[i + 2] = const pw.FlexColumnWidth(1.25);
+                    }
+
+                    widgets.add(
+                      pw.Text(
+                        monthLabel,
+                        style: pw.TextStyle(
+                          fontSize: 9,
+                          fontWeight: pw.FontWeight.bold,
+                          color: primaryColor,
+                        ),
+                      ),
+                    );
+                    widgets.add(pw.SizedBox(height: 4));
+                    widgets.add(
+                      pw.Table(
+                        border: pw.TableBorder.all(
+                          color: PdfColors.grey300,
+                          width: 0.5,
+                        ),
+                        columnWidths: colWidths,
                         children: [
-                          _pdfTh('No'),
-                          _pdfTh('Anggota'),
-                          ...dates.map((d) {
-                            final label = _fmtDate(d);
-                            // tampilkan versi pendek biar muat
-                            final shortLabel = label.length > 6 ? label.substring(0, 6) : label;
-                            return _pdfTh(shortLabel);
+                          pw.TableRow(
+                            decoration: const pw.BoxDecoration(color: primaryColor),
+                            children: [
+                              _pdfTh('No'),
+                              _pdfTh('Anggota'),
+                              ...shownDates.map((d) {
+                                final label = DateFormat(
+                                  'dd',
+                                  'id_ID',
+                                ).format(DateTime.parse(d));
+                                return _pdfTh(label);
+                              }),
+                            ],
+                          ),
+                          ...names.asMap().entries.map((e) {
+                            final idx = e.key + 1;
+                            final name = e.value;
+                            final byDate = netMap[name] ?? const {};
+                            return pw.TableRow(
+                              decoration: idx.isEven
+                                  ? const pw.BoxDecoration(color: bgColor)
+                                  : null,
+                              children: [
+                                _pdfTd(idx.toString()),
+                                _pdfTd(name),
+                                ...shownDates.map((d) {
+                                  final v = byDate[d] ?? 0;
+                                  return _pdfTd(v == 0 ? '-' : _fmt(v));
+                                }),
+                              ],
+                            );
                           }),
                         ],
                       ),
-                      ...memberNames.asMap().entries.map((e) {
-                        final idx = e.key + 1;
-                        final name = e.value;
-                        final byDate = netMap[name] ?? const {};
-                        return pw.TableRow(
-                          decoration: idx.isEven ? const pw.BoxDecoration(color: bgColor) : null,
-                          children: [
-                            _pdfTd(idx.toString()),
-                            _pdfTd(name),
-                            ...dates.map((d) {
-                              final v = byDate[d] ?? 0;
-                              return _pdfTd(v == 0 ? '-' : _fmt(v));
-                            }),
-                          ],
-                        );
-                      }),
-                    ],
+                    );
+                    widgets.add(pw.SizedBox(height: 10));
+                  }
+
+                  return pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: widgets,
                   );
                 })(),
             ],
@@ -703,70 +831,123 @@ class ExportService {
       ),
     );
 
-    // ── Halaman 2: Riwayat Tabungan ─────────────────────────────
-    if (recentSavings.isNotEmpty) {
+    // ── Halaman 2: Rekap Tabungan Pivot Bulanan ─────────────────
+    if (savingsPivotRows.isNotEmpty) {
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(32),
-          build: (ctx) => pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              _pdfPageHeader(projectName, 'RIWAYAT TABUNGAN (20 Terakhir)'),
-              pw.SizedBox(height: 12),
-              pw.Table(
-                border: pw.TableBorder.all(
-                  color: PdfColors.grey300,
-                  width: 0.5,
-                ),
-                columnWidths: {
-                  0: const pw.FlexColumnWidth(2.5),
-                  1: const pw.FlexColumnWidth(1.5),
-                  2: const pw.FlexColumnWidth(2),
-                  3: const pw.FlexColumnWidth(2),
-                  4: const pw.FlexColumnWidth(2),
-                },
-                children: [
-                  pw.TableRow(
-                    decoration: const pw.BoxDecoration(color: primaryColor),
-                    children: [
-                      _pdfTh('Anggota'),
-                      _pdfTh('Tipe'),
-                      _pdfTh('Jumlah'),
-                      _pdfTh('Tanggal'),
-                      _pdfTh('Catatan'),
-                    ],
-                  ),
-                  ...recentSavings.asMap().entries.map((e) {
-                    final i = e.key;
-                    final row = e.value;
-                    final isDeposit = row['type'] == 'deposit';
-                    final amount = (row['amount'] as num?)?.toDouble() ?? 0;
-                    return pw.TableRow(
-                      decoration: i.isEven
-                          ? const pw.BoxDecoration(color: bgColor)
-                          : null,
+          build: (ctx) {
+            final monthMap = <String, List<Map<String, dynamic>>>{};
+            for (final row in savingsPivotRows) {
+              final raw = row['tgl']?.toString() ?? '';
+              if (raw.length < 7) continue;
+              final month = raw.substring(0, 7);
+              (monthMap[month] ??= []).add(row);
+            }
+            final monthKeys = monthMap.keys.toList()
+              ..sort((a, b) => b.compareTo(a));
+
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                _pdfPageHeader(projectName, 'REKAP TABUNGAN PIVOT BULANAN'),
+                pw.SizedBox(height: 8),
+                ...monthKeys.take(3).expand((month) {
+                  final rows = monthMap[month]!;
+                  final monthLabel = DateFormat(
+                    'MMMM yyyy',
+                    'id_ID',
+                  ).format(DateTime.parse('$month-01'));
+
+                  final dates = rows
+                      .map((r) => r['tgl']?.toString() ?? '')
+                      .where((d) => d.isNotEmpty)
+                      .toSet()
+                      .toList()
+                    ..sort();
+                  final shownDates = dates.length > 10
+                      ? dates.sublist(dates.length - 10)
+                      : dates;
+
+                  final names = rows
+                      .map((r) => r['name']?.toString() ?? '')
+                      .where((n) => n.trim().isNotEmpty)
+                      .toSet()
+                      .toList()
+                    ..sort();
+
+                  final netMap = <String, Map<String, double>>{};
+                  for (final r in rows) {
+                    final d = r['tgl']?.toString() ?? '';
+                    final n = r['name']?.toString() ?? '';
+                    final v = (r['net_tabungan'] as num?)?.toDouble() ?? 0;
+                    (netMap[n] ??= {})[d] = v;
+                  }
+
+                  final colWidths = <int, pw.TableColumnWidth>{
+                    0: const pw.FlexColumnWidth(0.7),
+                    1: const pw.FlexColumnWidth(2.4),
+                  };
+                  for (int i = 0; i < shownDates.length; i++) {
+                    colWidths[i + 2] = const pw.FlexColumnWidth(1.2);
+                  }
+
+                  return <pw.Widget>[
+                    pw.Text(
+                      monthLabel,
+                      style: pw.TextStyle(
+                        fontSize: 9,
+                        fontWeight: pw.FontWeight.bold,
+                        color: primaryColor,
+                      ),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Table(
+                      border: pw.TableBorder.all(
+                        color: PdfColors.grey300,
+                        width: 0.5,
+                      ),
+                      columnWidths: colWidths,
                       children: [
-                        _pdfTd(row['name']?.toString() ?? ''),
-                        _pdfTd(
-                          isDeposit ? 'Setor' : 'Tarik',
-                          color: isDeposit ? successColor : errorColor,
+                        pw.TableRow(
+                          decoration: const pw.BoxDecoration(color: primaryColor),
+                          children: [
+                            _pdfTh('No'),
+                            _pdfTh('Anggota'),
+                            ...shownDates.map(
+                              (d) => _pdfTh(
+                                DateFormat('dd', 'id_ID').format(DateTime.parse(d)),
+                              ),
+                            ),
+                          ],
                         ),
-                        _pdfTd(
-                          '${isDeposit ? '+' : '-'}${_fmt(amount)}',
-                          color: isDeposit ? successColor : errorColor,
-                        ),
-                        _pdfTd(
-                          _fmtDate(row['transaction_date']?.toString() ?? ''),
-                        ),
-                        _pdfTd(row['note']?.toString() ?? '-', fontSize: 8),
+                        ...names.asMap().entries.map((e) {
+                          final idx = e.key + 1;
+                          final name = e.value;
+                          final byDate = netMap[name] ?? const {};
+                          return pw.TableRow(
+                            decoration: idx.isEven
+                                ? const pw.BoxDecoration(color: bgColor)
+                                : null,
+                            children: [
+                              _pdfTd(idx.toString()),
+                              _pdfTd(name),
+                              ...shownDates.map((d) {
+                                final v = byDate[d] ?? 0;
+                                return _pdfTd(v == 0 ? '-' : _fmt(v));
+                              }),
+                            ],
+                          );
+                        }),
                       ],
-                    );
-                  }),
-                ],
-              ),
-            ],
-          ),
+                    ),
+                    pw.SizedBox(height: 10),
+                  ];
+                }),
+              ],
+            );
+          },
         ),
       );
     }
@@ -878,6 +1059,39 @@ class ExportService {
     buffer.writeln('Project,$projectName');
     buffer.writeln('Member,$memberName');
     buffer.writeln('Dicetak,${DateFormat('dd MMM yyyy HH:mm', 'id_ID').format(DateTime.now())}');
+    buffer.writeln();
+
+    final memberSummary = await db.rawQuery(
+      '''
+      SELECT
+        COALESCE(vs.net_savings, 0) - COALESCE(ap.auto_potong, 0) AS net_savings,
+        COALESCE(vl.sisa_hutang, 0)  AS sisa_hutang,
+        (COALESCE(vs.net_savings, 0) - COALESCE(ap.auto_potong, 0))
+          - COALESCE(vl.sisa_hutang, 0) AS saldo_efektif
+      FROM members m
+      LEFT JOIN v_member_savings vs ON vs.member_id = m.id
+      LEFT JOIN v_member_loans   vl ON vl.member_id = m.id
+      LEFT JOIN (
+        SELECT
+          l.member_id,
+          COALESCE(SUM(lp.amount), 0) AS auto_potong
+        FROM loan_payments lp
+        JOIN loans l ON l.id = lp.loan_id
+        WHERE lp.note LIKE 'Auto-potong dari tabungan%'
+        GROUP BY l.member_id
+      ) ap ON ap.member_id = m.id
+      WHERE m.id = ?
+      LIMIT 1
+    ''',
+      [memberId],
+    );
+    final sm = memberSummary.isNotEmpty ? memberSummary.first : {};
+    final netSavings = (sm['net_savings'] as num?)?.toDouble() ?? 0;
+    final sisaHutang = (sm['sisa_hutang'] as num?)?.toDouble() ?? 0;
+    final saldoEfektif = (sm['saldo_efektif'] as num?)?.toDouble() ?? 0;
+    buffer.writeln('Tabungan Bersih,${netSavings.toStringAsFixed(0)}');
+    buffer.writeln('Sisa Hutang,${sisaHutang.toStringAsFixed(0)}');
+    buffer.writeln('Saldo Efektif,${saldoEfektif.toStringAsFixed(0)}');
     buffer.writeln();
 
     buffer.writeln('=== TABUNGAN ===');
@@ -998,12 +1212,22 @@ class ExportService {
     final memberSummary = await db.rawQuery(
       '''
       SELECT
-        COALESCE(vs.net_savings, 0)  AS net_savings,
+        COALESCE(vs.net_savings, 0) - COALESCE(ap.auto_potong, 0) AS net_savings,
         COALESCE(vl.sisa_hutang, 0)  AS sisa_hutang,
-        COALESCE(vs.net_savings, 0) - COALESCE(vl.sisa_hutang, 0) AS saldo_efektif
+        (COALESCE(vs.net_savings, 0) - COALESCE(ap.auto_potong, 0))
+          - COALESCE(vl.sisa_hutang, 0) AS saldo_efektif
       FROM members m
       LEFT JOIN v_member_savings vs ON vs.member_id = m.id
       LEFT JOIN v_member_loans   vl ON vl.member_id = m.id
+      LEFT JOIN (
+        SELECT
+          l.member_id,
+          COALESCE(SUM(lp.amount), 0) AS auto_potong
+        FROM loan_payments lp
+        JOIN loans l ON l.id = lp.loan_id
+        WHERE lp.note LIKE 'Auto-potong dari tabungan%'
+        GROUP BY l.member_id
+      ) ap ON ap.member_id = m.id
       WHERE m.id = ?
       LIMIT 1
     ''',
