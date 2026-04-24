@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:baitul_mal_plus/core/restart_widget.dart';
 import 'package:baitul_mal_plus/data/services/export_service.dart';
 import 'package:baitul_mal_plus/data/services/import_service.dart';
+import 'package:baitul_mal_plus/data/source/local/database_helper.dart';
 import 'package:flutter/material.dart';
 
 class BackupRestoreSheet extends StatefulWidget {
@@ -182,7 +183,8 @@ class _BackupRestoreSheetState extends State<BackupRestoreSheet> {
       if (result.cancelled) return;
 
       if (result.success) {
-        widget.onImportSuccess?.call();
+        // Jangan trigger refresh DB sebelum reset+restart.
+        // Kalau ada query yang masih berjalan lalu DB ditutup, bisa memicu error "database_closed".
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -193,6 +195,9 @@ class _BackupRestoreSheetState extends State<BackupRestoreSheet> {
             ),
           );
         }
+
+        // Reset cached DB connection sebelum restart
+        await DatabaseHelper.reset();
 
         // Soft restart agar semua screen reload data dari DB
         if (context.mounted) {

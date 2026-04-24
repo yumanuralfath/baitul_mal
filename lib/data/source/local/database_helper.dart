@@ -22,6 +22,18 @@ class DatabaseHelper {
   static const String _dbName = 'baitul_mal.db';
   static const int _dbVersion = 3;
 
+  /// Tutup koneksi DB yang sedang terbuka dan paksa reopen pada akses berikutnya.
+  /// Berguna setelah restore/import SQL agar tidak terjadi stale connection/error.
+  static Future<void> reset() async {
+    try {
+      await _database?.close();
+    } catch (_) {
+      // ignore
+    } finally {
+      _database = null;
+    }
+  }
+
   /// Mengembalikan instance database (membuat baru jika belum ada).
   Future<Database> get database async {
     _database ??= await _initDatabase();
