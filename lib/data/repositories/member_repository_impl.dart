@@ -77,49 +77,56 @@ class MemberRepositoryImpl implements MemberRepository {
     final db = await _db.database;
     await db.transaction((txn) async {
       await txn.insert('savings', saving.toMap());
-      if (saving.type == 'deposit') {
-        final loans = await txn.query(
-          'loans',
-          where: 'member_id = ? AND status = ?',
-          whereArgs: [saving.memberId, 'active'],
-          orderBy: 'loan_date ASC',
-        );
-        double remaining = saving.amount;
-        for (final loanMap in loans) {
-          if (remaining <= 0) break;
-          final loanId = loanMap['id'] as int;
-          final total = (loanMap['total_amount'] as num).toDouble();
-          final paid = (loanMap['paid_amount'] as num? ?? 0).toDouble();
-          final unpaid = total - paid;
-          if (unpaid <= 0) continue;
-          final payment = remaining >= unpaid ? unpaid : remaining;
-          remaining -= payment;
-          await txn.insert('loan_payments', {
-            'loan_id': loanId,
-            'amount': payment,
-            'note': 'Auto-potong dari tabungan',
-            'payment_date': saving.transactionDate.toIso8601String(),
-          });
-        }
-      }
+      await _syncAutoPaymentFromSavings(txn, saving.memberId);
     });
   }
 
   @override
   Future<void> updateSaving(SavingModel saving) async {
     final db = await _db.database;
-    await db.update(
-      'savings',
-      saving.toMap(),
-      where: 'id = ?',
-      whereArgs: [saving.id],
-    );
+    await db.transaction((txn) async {
+      final oldRows = await txn.query(
+        'savings',
+        columns: ['member_id'],
+        where: 'id = ?',
+        whereArgs: [saving.id],
+        limit: 1,
+      );
+      final oldMemberId = oldRows.isNotEmpty
+          ? (oldRows.first['member_id'] as int)
+          : saving.memberId;
+
+      await txn.update(
+        'savings',
+        saving.toMap(),
+        where: 'id = ?',
+        whereArgs: [saving.id],
+      );
+
+      await _syncAutoPaymentFromSavings(txn, oldMemberId);
+      if (oldMemberId != saving.memberId) {
+        await _syncAutoPaymentFromSavings(txn, saving.memberId);
+      }
+    });
   }
 
   @override
   Future<void> deleteSaving(int id) async {
     final db = await _db.database;
-    await db.delete('savings', where: 'id = ?', whereArgs: [id]);
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'savings',
+        columns: ['member_id'],
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      if (rows.isEmpty) return;
+      final memberId = rows.first['member_id'] as int;
+
+      await txn.delete('savings', where: 'id = ?', whereArgs: [id]);
+      await _syncAutoPaymentFromSavings(txn, memberId);
+    });
   }
 
   @override
@@ -163,18 +170,49 @@ class MemberRepositoryImpl implements MemberRepository {
   @override
   Future<void> updateLoan(LoanModel loan) async {
     final db = await _db.database;
-    await db.update(
-      'loans',
-      loan.toMap(),
-      where: 'id = ?',
-      whereArgs: [loan.id],
-    );
+    await db.transaction((txn) async {
+      final oldRows = await txn.query(
+        'loans',
+        columns: ['member_id'],
+        where: 'id = ?',
+        whereArgs: [loan.id],
+        limit: 1,
+      );
+      final oldMemberId = oldRows.isNotEmpty
+          ? (oldRows.first['member_id'] as int)
+          : loan.memberId;
+
+      await txn.update(
+        'loans',
+        loan.toMap(),
+        where: 'id = ?',
+        whereArgs: [loan.id],
+      );
+
+      await _syncAutoPaymentFromSavings(txn, oldMemberId);
+      if (oldMemberId != loan.memberId) {
+        await _syncAutoPaymentFromSavings(txn, loan.memberId);
+      }
+    });
   }
 
   @override
   Future<void> deleteLoan(int id) async {
     final db = await _db.database;
-    await db.delete('loans', where: 'id = ?', whereArgs: [id]);
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'loans',
+        columns: ['member_id'],
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      if (rows.isEmpty) return;
+      final memberId = rows.first['member_id'] as int;
+
+      await txn.delete('loans', where: 'id = ?', whereArgs: [id]);
+      await _syncAutoPaymentFromSavings(txn, memberId);
+    });
   }
 
   @override
@@ -355,8 +393,11 @@ class MemberRepositoryImpl implements MemberRepository {
   }
 
   /// Sinkronisasi auto-potong dari tabungan bersih member ke pinjaman aktif.
-  /// Idempotent: hanya memakai sisa budget auto-potong yang belum dipakai.
+  /// Deterministik: rebuild auto-potong dari data terbaru supaya edit/hapus transaksi ikut undo.
   Future<void> _syncAutoPaymentFromSavings(DatabaseExecutor db, int memberId) async {
+    await _removeAutoPayments(db, memberId);
+    await _refreshLoanPaidAmounts(db, memberId);
+
     final netSavingsRows = await db.rawQuery(
       '''
       SELECT
@@ -372,25 +413,12 @@ class MemberRepositoryImpl implements MemberRepository {
         (netSavingsRows.first['net_savings'] as num?)?.toDouble() ?? 0;
     if (netSavings <= 0) return;
 
-    final autoPaidRows = await db.rawQuery(
-      '''
-      SELECT COALESCE(SUM(lp.amount), 0) AS auto_paid
-      FROM loan_payments lp
-      JOIN loans l ON l.id = lp.loan_id
-      WHERE l.member_id = ?
-        AND lp.note LIKE 'Auto-potong dari tabungan%'
-    ''',
-      [memberId],
-    );
-    final autoPaid = (autoPaidRows.first['auto_paid'] as num?)?.toDouble() ?? 0;
-
-    double remainingBudget = netSavings - autoPaid;
-    if (remainingBudget <= 0) return;
+    double remainingBudget = netSavings;
 
     final activeLoans = await db.query(
       'loans',
-      where: 'member_id = ? AND status = ?',
-      whereArgs: [memberId, 'active'],
+      where: "member_id = ? AND status != 'paid'",
+      whereArgs: [memberId],
       orderBy: 'loan_date ASC',
     );
 
@@ -410,9 +438,64 @@ class MemberRepositoryImpl implements MemberRepository {
       await db.insert('loan_payments', {
         'loan_id': loanId,
         'amount': payment,
-        'note': 'Auto-potong dari tabungan (sinkronisasi)',
+        'note': 'Auto-potong dari tabungan',
         'payment_date': DateTime.now().toIso8601String(),
       });
+    }
+
+    await _refreshLoanPaidAmounts(db, memberId);
+  }
+
+  Future<void> _removeAutoPayments(DatabaseExecutor db, int memberId) async {
+    final rows = await db.rawQuery(
+      '''
+      SELECT lp.id
+      FROM loan_payments lp
+      JOIN loans l ON l.id = lp.loan_id
+      WHERE l.member_id = ?
+        AND lp.note LIKE 'Auto-potong dari tabungan%'
+    ''',
+      [memberId],
+    );
+
+    for (final row in rows) {
+      final id = row['id'] as int;
+      await db.delete('loan_payments', where: 'id = ?', whereArgs: [id]);
+    }
+  }
+
+  Future<void> _refreshLoanPaidAmounts(DatabaseExecutor db, int memberId) async {
+    final loans = await db.query(
+      'loans',
+      where: 'member_id = ?',
+      whereArgs: [memberId],
+    );
+
+    for (final loan in loans) {
+      final loanId = loan['id'] as int;
+      final total = (loan['total_amount'] as num?)?.toDouble() ?? 0;
+      final currentStatus = loan['status']?.toString() ?? 'active';
+
+      final paidRows = await db.rawQuery(
+        'SELECT COALESCE(SUM(amount), 0) AS paid FROM loan_payments WHERE loan_id = ?',
+        [loanId],
+      );
+      final paid = (paidRows.first['paid'] as num?)?.toDouble() ?? 0;
+
+      final nextStatus = paid >= total
+          ? 'paid'
+          : (currentStatus == 'overdue' ? 'overdue' : 'active');
+
+      await db.update(
+        'loans',
+        {
+          'paid_amount': paid,
+          'status': nextStatus,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [loanId],
+      );
     }
   }
 }
