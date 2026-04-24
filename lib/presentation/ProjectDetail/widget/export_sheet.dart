@@ -3,7 +3,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:baitul_mal_plus/data/services/export_service.dart';
-import 'package:baitul_mal_plus/data/services/import_service.dart';
 
 // ═══════════════════════════════════════════════════════════════
 // EXPORT SHEET — bottom sheet pilih format ekspor
@@ -11,13 +10,11 @@ import 'package:baitul_mal_plus/data/services/import_service.dart';
 class ExportSheet extends StatefulWidget {
   final int projectId;
   final String projectName;
-  final VoidCallback? onImportSuccess;
 
   const ExportSheet({
     super.key,
     required this.projectId,
     required this.projectName,
-    this.onImportSuccess,
   });
 
   @override
@@ -122,25 +119,6 @@ class _ExportSheetState extends State<ExportSheet> {
               subtitle: 'Backup data project untuk restore nanti',
               onTap: () => _export('sql_project'),
             ),
-            _ExportTile(
-              icon: Icons.backup_outlined,
-              iconColor: cs.tertiary,
-              title: 'Backup SQL (Semua data)',
-              subtitle: 'Backup seluruh database',
-              onTap: () => _export('sql_all'),
-            ),
-
-            const Divider(height: 24),
-
-            // IMPOR section
-            _SectionLabel(label: 'IMPOR', icon: Icons.download),
-            _ExportTile(
-              icon: Icons.restore,
-              iconColor: Colors.orange,
-              title: 'Restore dari SQL',
-              subtitle: 'Pilih file .sql hasil backup',
-              onTap: _import,
-            ),
           ],
 
           const SizedBox(height: 16),
@@ -188,87 +166,6 @@ class _ExportSheetState extends State<ExportSheet> {
             content: Text('Gagal ekspor: $e'),
             backgroundColor: Colors.red,
           ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _import() async {
-    // Konfirmasi dulu
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(
-          Icons.warning_amber_rounded,
-          color: Colors.orange,
-          size: 40,
-        ),
-        title: const Text('Import Data?'),
-        content: const Text(
-          'Data dari file SQL akan digabungkan ke database yang ada.\n\n'
-          'Backup otomatis akan dibuat sebelum import.\n\n'
-          'Lanjutkan?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ya, Import'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    setState(() {
-      _loading = true;
-      _loadingLabel = 'Membuat backup otomatis...';
-    });
-
-    try {
-      // Auto backup dulu
-      await ImportService.autoBackup();
-
-      if (mounted) setState(() => _loadingLabel = 'Mengimpor data...');
-
-      final result = await ImportService.importFromSql();
-
-      if (mounted) Navigator.pop(context);
-
-      if (result.cancelled) return;
-
-      if (result.success) {
-        widget.onImportSuccess?.call();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Import berhasil! ${result.imported} statement dijalankan.',
-              ),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result.error ?? 'Import gagal'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {

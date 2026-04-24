@@ -3,6 +3,7 @@ import 'package:baitul_mal_plus/domain/models/project_model.dart';
 import 'package:baitul_mal_plus/domain/repositories/project_repository.dart';
 import 'package:baitul_mal_plus/presentation/core/widgets/appbar.dart';
 import 'package:baitul_mal_plus/presentation/home/widgets/action_button.dart';
+import 'package:baitul_mal_plus/presentation/home/widgets/backup_restore_sheet.dart';
 import 'package:baitul_mal_plus/presentation/home/widgets/project_list_item.dart';
 import 'package:flutter/material.dart';
 
@@ -77,6 +78,13 @@ class _HomeScreenState extends State<HomeScreen> {
         context,
         toggleTheme: widget.toggleTheme,
         title: titleHome,
+        actions: [
+          IconButton(
+            tooltip: 'Backup & Restore',
+            icon: const Icon(Icons.cloud_sync_outlined),
+            onPressed: _showBackupRestoreSheet,
+          ),
+        ],
       ),
       body: FutureBuilder<List<ProjectModel>>(
         future: _projectsFuture,
@@ -85,6 +93,17 @@ class _HomeScreenState extends State<HomeScreen> {
       floatingActionButton: AddProjectButton(
         repository: _repository,
         onProjectAdded: _loadProjects,
+      ),
+    );
+  }
+
+  void _showBackupRestoreSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => BackupRestoreSheet(
+        onImportSuccess: _loadProjects,
       ),
     );
   }

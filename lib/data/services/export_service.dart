@@ -622,6 +622,402 @@ class ExportService {
     return file;
   }
 
+  /// Ekspor data 1 member ke CSV
+  static Future<File> exportMemberCsv({required int memberId}) async {
+    final db = await openDatabase(
+      p.join(await getDatabasesPath(), 'baitul_mal.db'),
+    );
+
+    final memberInfo = await db.rawQuery(
+      '''
+      SELECT m.id, m.name AS member_name, p.name AS project_name
+      FROM members m JOIN projects p ON p.id = m.project_id
+      WHERE m.id = ?
+    ''',
+      [memberId],
+    );
+
+    if (memberInfo.isEmpty) {
+      await db.close();
+      throw Exception('Member tidak ditemukan');
+    }
+
+    final memberName = memberInfo.first['member_name']?.toString() ?? 'Member';
+    final projectName =
+        memberInfo.first['project_name']?.toString() ?? 'Project';
+
+    final buffer = StringBuffer();
+    buffer.writeln('Project,$projectName');
+    buffer.writeln('Member,$memberName');
+    buffer.writeln('Dicetak,${DateFormat('dd MMM yyyy HH:mm', 'id_ID').format(DateTime.now())}');
+    buffer.writeln();
+
+    buffer.writeln('=== TABUNGAN ===');
+    buffer.writeln('Tipe,Jumlah,Tanggal,Catatan');
+    final savings = await db.rawQuery(
+      '''
+      SELECT s.type, s.amount, s.transaction_date, s.note
+      FROM savings s
+      WHERE s.member_id = ?
+      ORDER BY s.transaction_date DESC
+    ''',
+      [memberId],
+    );
+    for (final row in savings) {
+      final tipe = row['type'] == 'deposit' ? 'Setor' : 'Tarik';
+      final jumlah = (row['amount'] as num?)?.toDouble() ?? 0;
+      final tgl = _fmtDate(row['transaction_date']?.toString() ?? '');
+      final catatan = (row['note'] ?? '').toString().replaceAll(',', ';');
+      buffer.writeln('$tipe,${jumlah.toStringAsFixed(0)},$tgl,$catatan');
+    }
+
+    buffer.writeln();
+    buffer.writeln('=== PINJAMAN ===');
+    buffer.writeln(
+      'Pokok,Bunga(%),Total,Terbayar,Sisa,Status,Tanggal Pinjam,Jatuh Tempo,Catatan',
+    );
+    final loans = await db.rawQuery(
+      '''
+      SELECT l.amount, l.interest_rate, l.total_amount, l.paid_amount,
+             l.status, l.loan_date, l.due_date, l.note
+      FROM loans l
+      WHERE l.member_id = ?
+      ORDER BY l.loan_date DESC
+    ''',
+      [memberId],
+    );
+    for (final row in loans) {
+      final pokok = (row['amount'] as num?)?.toDouble() ?? 0;
+      final bunga = (row['interest_rate'] as num?)?.toDouble() ?? 0;
+      final total = (row['total_amount'] as num?)?.toDouble() ?? 0;
+      final bayar = (row['paid_amount'] as num?)?.toDouble() ?? 0;
+      final sisa = total - bayar;
+      final status = _statusLabel(row['status']?.toString() ?? '');
+      final tglPinjam = _fmtDate(row['loan_date']?.toString() ?? '');
+      final tglTempo = row['due_date'] != null
+          ? _fmtDate(row['due_date'].toString())
+          : '-';
+      final catatan = (row['note'] ?? '').toString().replaceAll(',', ';');
+      buffer.writeln(
+        '${pokok.toStringAsFixed(0)},$bunga,${total.toStringAsFixed(0)},${bayar.toStringAsFixed(0)},${sisa.toStringAsFixed(0)},$status,$tglPinjam,$tglTempo,$catatan',
+      );
+    }
+
+    buffer.writeln();
+    buffer.writeln('=== CICILAN PINJAMAN ===');
+    buffer.writeln('Jumlah Pinjaman,Cicilan,Tanggal Bayar,Catatan');
+    final payments = await db.rawQuery(
+      '''
+      SELECT l.total_amount, lp.amount, lp.payment_date, lp.note
+      FROM loan_payments lp
+      JOIN loans l ON l.id = lp.loan_id
+      WHERE l.member_id = ?
+      ORDER BY lp.payment_date DESC
+    ''',
+      [memberId],
+    );
+    for (final row in payments) {
+      final totalPinjam = (row['total_amount'] as num?)?.toDouble() ?? 0;
+      final cicilan = (row['amount'] as num?)?.toDouble() ?? 0;
+      final tgl = _fmtDate(row['payment_date']?.toString() ?? '');
+      final catatan = (row['note'] ?? '').toString().replaceAll(',', ';');
+      buffer.writeln(
+        '${totalPinjam.toStringAsFixed(0)},${cicilan.toStringAsFixed(0)},$tgl,$catatan',
+      );
+    }
+
+    await db.close();
+
+    final dir = await getApplicationDocumentsDirectory();
+    final safeMember = memberName.replaceAll(' ', '_');
+    final fileName =
+        'export_member_${safeMember}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.csv';
+    final file = File(p.join(dir.path, fileName));
+    await file.writeAsString(buffer.toString(), encoding: const Utf8Codec());
+    return file;
+  }
+
+  /// Ekspor laporan 1 member ke PDF
+  static Future<File> exportMemberPdf({required int memberId}) async {
+    final db = await openDatabase(
+      p.join(await getDatabasesPath(), 'baitul_mal.db'),
+    );
+
+    final memberInfo = await db.rawQuery(
+      '''
+      SELECT m.id, m.name AS member_name, m.project_id, p.name AS project_name
+      FROM members m JOIN projects p ON p.id = m.project_id
+      WHERE m.id = ?
+    ''',
+      [memberId],
+    );
+    if (memberInfo.isEmpty) {
+      await db.close();
+      throw Exception('Member tidak ditemukan');
+    }
+
+    final memberName = memberInfo.first['member_name']?.toString() ?? 'Member';
+    final projectName =
+        memberInfo.first['project_name']?.toString() ?? 'Project';
+
+    final memberSummary = await db.rawQuery(
+      '''
+      SELECT
+        COALESCE(vs.net_savings, 0)  AS net_savings,
+        COALESCE(vl.sisa_hutang, 0)  AS sisa_hutang,
+        COALESCE(vs.net_savings, 0) - COALESCE(vl.sisa_hutang, 0) AS saldo_efektif
+      FROM members m
+      LEFT JOIN v_member_savings vs ON vs.member_id = m.id
+      LEFT JOIN v_member_loans   vl ON vl.member_id = m.id
+      WHERE m.id = ?
+      LIMIT 1
+    ''',
+      [memberId],
+    );
+
+    final savings = await db.rawQuery(
+      '''
+      SELECT s.type, s.amount, s.transaction_date, s.note
+      FROM savings s
+      WHERE s.member_id = ?
+      ORDER BY s.transaction_date DESC
+    ''',
+      [memberId],
+    );
+
+    final loans = await db.rawQuery(
+      '''
+      SELECT l.total_amount, l.paid_amount, l.status, l.loan_date, l.due_date, l.note
+      FROM loans l
+      WHERE l.member_id = ?
+      ORDER BY l.loan_date DESC
+    ''',
+      [memberId],
+    );
+
+    await db.close();
+
+    final pdf = pw.Document();
+    final now = DateFormat('dd MMMM yyyy HH:mm', 'id_ID').format(DateTime.now());
+    const primaryColor = PdfColor.fromInt(0xFF1565C0);
+    const errorColor = PdfColor.fromInt(0xFFC62828);
+    const successColor = PdfColor.fromInt(0xFF2E7D32);
+    const bgColor = PdfColor.fromInt(0xFFF5F5F5);
+
+    final summary = memberSummary.isNotEmpty ? memberSummary.first : {};
+    final netSavings = (summary['net_savings'] as num?)?.toDouble() ?? 0;
+    final sisaHutang = (summary['sisa_hutang'] as num?)?.toDouble() ?? 0;
+    final saldoEfektif = (summary['saldo_efektif'] as num?)?.toDouble() ?? 0;
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (ctx) => [
+          pw.Container(
+            width: double.infinity,
+            padding: const pw.EdgeInsets.all(18),
+            decoration: const pw.BoxDecoration(
+              color: primaryColor,
+              borderRadius: pw.BorderRadius.all(pw.Radius.circular(8)),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'LAPORAN MEMBER',
+                  style: pw.TextStyle(
+                    color: PdfColors.white,
+                    fontSize: 10,
+                    letterSpacing: 2,
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  memberName,
+                  style: pw.TextStyle(
+                    color: PdfColors.white,
+                    fontSize: 20,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  'Project: $projectName',
+                  style: const pw.TextStyle(
+                    color: PdfColor.fromInt(0xB3FFFFFF),
+                    fontSize: 9,
+                  ),
+                ),
+                pw.Text(
+                  'Dicetak: $now',
+                  style: const pw.TextStyle(
+                    color: PdfColor.fromInt(0xB3FFFFFF),
+                    fontSize: 9,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 16),
+          pw.Text(
+            'RINGKASAN',
+            style: pw.TextStyle(
+              fontSize: 11,
+              fontWeight: pw.FontWeight.bold,
+              color: primaryColor,
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Row(
+            children: [
+              _pdfStatBox('Tabungan Bersih', _fmt(netSavings), successColor, ctx),
+              pw.SizedBox(width: 8),
+              _pdfStatBox(
+                'Sisa Hutang',
+                _fmt(sisaHutang),
+                sisaHutang > 0 ? errorColor : PdfColors.grey700,
+                ctx,
+              ),
+              pw.SizedBox(width: 8),
+              _pdfStatBox(
+                'Saldo Efektif',
+                _fmt(saldoEfektif),
+                saldoEfektif < 0 ? errorColor : successColor,
+                ctx,
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 18),
+
+          pw.Text(
+            'RIWAYAT TABUNGAN',
+            style: pw.TextStyle(
+              fontSize: 11,
+              fontWeight: pw.FontWeight.bold,
+              color: primaryColor,
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          if (savings.isEmpty)
+            pw.Text('-', style: const pw.TextStyle(fontSize: 9))
+          else
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(1.2),
+                1: const pw.FlexColumnWidth(1.6),
+                2: const pw.FlexColumnWidth(1.6),
+                3: const pw.FlexColumnWidth(3),
+              },
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: primaryColor),
+                  children: [
+                    _pdfTh('Tipe'),
+                    _pdfTh('Jumlah'),
+                    _pdfTh('Tanggal'),
+                    _pdfTh('Catatan'),
+                  ],
+                ),
+                ...savings.asMap().entries.map((e) {
+                  final i = e.key;
+                  final row = e.value;
+                  final isDeposit = row['type'] == 'deposit';
+                  final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+                  return pw.TableRow(
+                    decoration:
+                        i.isEven ? const pw.BoxDecoration(color: bgColor) : null,
+                    children: [
+                      _pdfTd(
+                        isDeposit ? 'Setor' : 'Tarik',
+                        color: isDeposit ? successColor : errorColor,
+                      ),
+                      _pdfTd(
+                        '${isDeposit ? '+' : '-'}${_fmt(amount)}',
+                        color: isDeposit ? successColor : errorColor,
+                      ),
+                      _pdfTd(_fmtDate(row['transaction_date']?.toString() ?? '')),
+                      _pdfTd(row['note']?.toString() ?? '-', fontSize: 8),
+                    ],
+                  );
+                }),
+              ],
+            ),
+
+          pw.SizedBox(height: 18),
+          pw.Text(
+            'RIWAYAT PINJAMAN',
+            style: pw.TextStyle(
+              fontSize: 11,
+              fontWeight: pw.FontWeight.bold,
+              color: primaryColor,
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          if (loans.isEmpty)
+            pw.Text('-', style: const pw.TextStyle(fontSize: 9))
+          else
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(1.8),
+                1: const pw.FlexColumnWidth(1.8),
+                2: const pw.FlexColumnWidth(1.6),
+                3: const pw.FlexColumnWidth(1.6),
+                4: const pw.FlexColumnWidth(2.2),
+              },
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: primaryColor),
+                  children: [
+                    _pdfTh('Total'),
+                    _pdfTh('Terbayar'),
+                    _pdfTh('Sisa'),
+                    _pdfTh('Status'),
+                    _pdfTh('Tanggal'),
+                  ],
+                ),
+                ...loans.asMap().entries.map((e) {
+                  final i = e.key;
+                  final row = e.value;
+                  final total =
+                      (row['total_amount'] as num?)?.toDouble() ?? 0;
+                  final paid = (row['paid_amount'] as num?)?.toDouble() ?? 0;
+                  final remain = total - paid;
+                  final statusRaw = row['status']?.toString() ?? '';
+                  return pw.TableRow(
+                    decoration:
+                        i.isEven ? const pw.BoxDecoration(color: bgColor) : null,
+                    children: [
+                      _pdfTd(_fmt(total)),
+                      _pdfTd(_fmt(paid), color: successColor),
+                      _pdfTd(
+                        _fmt(remain),
+                        color: remain > 0 ? errorColor : successColor,
+                      ),
+                      _pdfTd(
+                        _statusLabel(statusRaw),
+                        color: _statusPdfColor(statusRaw),
+                      ),
+                      _pdfTd(_fmtDate(row['loan_date']?.toString() ?? '')),
+                    ],
+                  );
+                }),
+              ],
+            ),
+        ],
+      ),
+    );
+
+    final dir = await getApplicationDocumentsDirectory();
+    final fileName =
+        'laporan_member_${memberName.replaceAll(' ', '_')}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf';
+    final file = File(p.join(dir.path, fileName));
+    await file.writeAsBytes(await pdf.save());
+    return file;
+  }
+
   /// Share file menggunakan share_plus
   // static Future<void> shareFile(File file, {String? subject}) async {
   //   await Share.shareXFiles([

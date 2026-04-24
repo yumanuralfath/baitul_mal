@@ -82,7 +82,6 @@ class _OverallSummaryPageState extends State<OverallSummaryPage>
       builder: (_) => ExportSheet(
         projectId: widget.project.id!,
         projectName: widget.project.name,
-        onImportSuccess: _load,
       ),
     );
   }

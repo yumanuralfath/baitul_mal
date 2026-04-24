@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:baitul_mal_plus/core/app.dart';
+import 'package:baitul_mal_plus/core/restart_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -15,5 +16,5 @@ Future<void> main() async {
     databaseFactory = databaseFactoryFfi;
   }
 
-  runApp(const BaitulMalApp());
+  runApp(const RestartWidget(child: BaitulMalApp()));
 }

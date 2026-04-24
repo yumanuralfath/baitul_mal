@@ -8,6 +8,7 @@ PreferredSizeWidget buildAppBar(
   BuildContext context, {
   required VoidCallback toggleTheme,
   String? title,
+  List<Widget> actions = const [],
 }) {
   return AppBar(
     title: title != null
@@ -16,6 +17,7 @@ PreferredSizeWidget buildAppBar(
     centerTitle: false,
     scrolledUnderElevation: 2,
     actions: [
+      ...actions,
       _ThemeToggleButton(onToggle: toggleTheme),
       const SizedBox(width: 8),
     ],

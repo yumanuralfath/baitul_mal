@@ -1,6 +1,7 @@
 // lib/presentation/project_detail/screens/member_detail_screen.dart
 
 import 'package:baitul_mal_plus/presentation/ProjectDetail/widget/transaction_sheets.dart';
+import 'package:baitul_mal_plus/data/services/export_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:baitul_mal_plus/domain/models/member_model.dart';
@@ -40,6 +41,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen>
   late Future<List<SavingModel>> _savingsFuture;
   late Future<List<LoanModel>> _loansFuture;
   late MemberModel _member;
+  bool _exporting = false;
 
   @override
   void initState() {
@@ -78,6 +80,41 @@ class _MemberDetailScreenState extends State<MemberDetailScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text(_member.name),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Ekspor',
+            onSelected: (v) async {
+              if (v == 'pdf') {
+                await _exportMember('pdf');
+              } else if (v == 'csv') {
+                await _exportMember('csv');
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'pdf',
+                enabled: !_exporting,
+                child: const ListTile(
+                  leading: Icon(Icons.picture_as_pdf, color: Colors.red),
+                  title: Text('Ekspor PDF'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'csv',
+                enabled: !_exporting,
+                child: const ListTile(
+                  leading: Icon(Icons.table_chart_outlined, color: Colors.green),
+                  title: Text('Ekspor CSV'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 4),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -188,6 +225,45 @@ class _MemberDetailScreenState extends State<MemberDetailScreen>
         },
       ),
     );
+  }
+
+  Future<void> _exportMember(String type) async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+
+    try {
+      final memberId = _member.id;
+      if (memberId == null) throw Exception('Member ID tidak valid');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(type == 'pdf' ? 'Membuat PDF...' : 'Membuat CSV...'),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+
+      final file = switch (type) {
+        'pdf' => await ExportService.exportMemberPdf(memberId: memberId),
+        _ => await ExportService.exportMemberCsv(memberId: memberId),
+      };
+
+      await ExportService.shareFile(
+        context,
+        file,
+        subject:
+            'Laporan ${_member.name}.${type == 'pdf' ? 'pdf' : 'csv'}',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal ekspor: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 }
 

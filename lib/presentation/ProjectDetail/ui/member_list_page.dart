@@ -25,7 +25,7 @@ class _CurrencyFmt {
 
 String _fmt(double v) => _currency.fmt(v);
 
-enum _SortMode { name, balance, debt }
+enum _SortMode { id, name, balance, debt, savings }
 
 class MemberListPage extends StatefulWidget {
   final ProjectModel project;
@@ -38,7 +38,7 @@ class MemberListPage extends StatefulWidget {
 class _MemberListPageState extends State<MemberListPage> {
   final MemberRepository _repo = MemberRepositoryImpl();
   late Future<List<MemberModel>> _future;
-  _SortMode _sort = _SortMode.name;
+  _SortMode _sort = _SortMode.id;
 
   @override
   void initState() {
@@ -55,12 +55,16 @@ class _MemberListPageState extends State<MemberListPage> {
   List<MemberModel> _sorted(List<MemberModel> list) {
     final copy = [...list];
     switch (_sort) {
+      case _SortMode.id:
+        copy.sort((a, b) => (a.id ?? 0).compareTo(b.id ?? 0));
       case _SortMode.name:
         copy.sort((a, b) => a.name.compareTo(b.name));
       case _SortMode.balance:
         copy.sort((a, b) => b.effectiveBalance.compareTo(a.effectiveBalance));
       case _SortMode.debt:
         copy.sort((a, b) => (b.sisaHutang ?? 0).compareTo(a.sisaHutang ?? 0));
+      case _SortMode.savings:
+        copy.sort((a, b) => (b.netSavings ?? 0).compareTo(a.netSavings ?? 0));
     }
     return copy;
   }
@@ -183,22 +187,43 @@ class _SortBar extends StatelessWidget {
         children: [
           Text('Urutkan:', style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(width: 8),
-          _SortChip(
-            label: 'Nama',
-            selected: current == _SortMode.name,
-            onTap: () => onChanged(_SortMode.name),
-          ),
-          const SizedBox(width: 6),
-          _SortChip(
-            label: 'Saldo',
-            selected: current == _SortMode.balance,
-            onTap: () => onChanged(_SortMode.balance),
-          ),
-          const SizedBox(width: 6),
-          _SortChip(
-            label: 'Hutang',
-            selected: current == _SortMode.debt,
-            onTap: () => onChanged(_SortMode.debt),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _SortChip(
+                    label: 'ID',
+                    selected: current == _SortMode.id,
+                    onTap: () => onChanged(_SortMode.id),
+                  ),
+                  const SizedBox(width: 6),
+                  _SortChip(
+                    label: 'Nama',
+                    selected: current == _SortMode.name,
+                    onTap: () => onChanged(_SortMode.name),
+                  ),
+                  const SizedBox(width: 6),
+                  _SortChip(
+                    label: 'Saldo',
+                    selected: current == _SortMode.balance,
+                    onTap: () => onChanged(_SortMode.balance),
+                  ),
+                  const SizedBox(width: 6),
+                  _SortChip(
+                    label: 'Hutang',
+                    selected: current == _SortMode.debt,
+                    onTap: () => onChanged(_SortMode.debt),
+                  ),
+                  const SizedBox(width: 6),
+                  _SortChip(
+                    label: 'Tabungan',
+                    selected: current == _SortMode.savings,
+                    onTap: () => onChanged(_SortMode.savings),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
