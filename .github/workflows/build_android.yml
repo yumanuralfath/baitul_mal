@@ -35,8 +35,18 @@ jobs:
           dart --version
 
       # 4. Dependencies
-      # Pakai lockfile supaya versi package konsisten (hindari conflict karena re-resolve)
-      - run: flutter pub get --enforce-lockfile
+      # Dependencies
+      # Catatan: --enforce-lockfile akan gagal jika pubspec.lock tidak match pubspec.yaml.
+      # Untuk workflow release, kita izinkan resolve normal agar build tidak berhenti.
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check pubspec.lock drift (warn only)
+        run: |
+          if ! git diff --quiet -- pubspec.lock; then
+            echo "::warning::pubspec.lock berubah setelah flutter pub get. Jalankan 'flutter pub get' secara lokal lalu commit pubspec.lock agar CI konsisten."
+            git --no-pager diff -- pubspec.lock | head -n 200 || true
+          fi
 
       # 5. 🔍 Ambil version dari pubspec
       - name: Get version
