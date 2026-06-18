@@ -8,6 +8,9 @@ class SavingModel {
   final DateTime transactionDate;
   final DateTime? createdAt;
 
+  // Join field
+  final String? memberName;
+
   const SavingModel({
     this.id,
     required this.projectId,
@@ -17,6 +20,7 @@ class SavingModel {
     this.note,
     required this.transactionDate,
     this.createdAt,
+    this.memberName,
   });
 
   Map<String, dynamic> toMap() {
@@ -43,6 +47,7 @@ class SavingModel {
       createdAt: map['created_at'] != null
           ? DateTime.tryParse(map['created_at'] as String)
           : null,
+      memberName: map['member_name'] as String?,
     );
   }
 }

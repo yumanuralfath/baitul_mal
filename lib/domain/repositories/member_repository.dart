@@ -14,6 +14,7 @@ abstract class MemberRepository {
   // Savings
   Future<List<SavingModel>> getSavingsByMember(int memberId);
   Future<void> addSaving(SavingModel saving);
+  Future<void> addSavingsBatch(List<SavingModel> savings);
   Future<void> updateSaving(SavingModel saving);
   Future<void> deleteSaving(int id);
   // Loans
@@ -33,4 +34,8 @@ abstract class MemberRepository {
     int projectId,
     DateTime date,
   );
+
+  // Daily Details
+  Future<List<SavingModel>> getSavingsByDate(int projectId, DateTime date);
+  Future<List<LoanModel>> getLoansByDate(int projectId, DateTime date);
 }

@@ -3,6 +3,7 @@
 
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'package:baitul_mal_plus/presentation/ProjectDetail/widget/daily_stats_card.dart';
 import 'package:baitul_mal_plus/presentation/ProjectDetail/widget/export_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -200,7 +201,11 @@ class _SummaryView extends StatelessWidget {
         }
         return RefreshIndicator(
           onRefresh: () async => onRefresh(),
-          child: _SummaryContent(cashflow: cf, showDailyStats: showDailyStats),
+          child: _SummaryContent(
+            projectId: cf.projectId,
+            cashflow: cf,
+            showDailyStats: showDailyStats,
+          ),
         );
       },
     );
@@ -299,6 +304,7 @@ class _DateFilterView extends StatelessWidget {
                     return RefreshIndicator(
                       onRefresh: () async => onRefresh(),
                       child: _SummaryContent(
+                        projectId: cf.projectId,
                         cashflow: cf,
                         showDailyStats: true,
                         filterDate: filterDate,
@@ -337,11 +343,13 @@ class _DateFilterView extends StatelessWidget {
 
 // ─── Summary Content ──────────────────────────────────────────
 class _SummaryContent extends StatelessWidget {
+  final int projectId;
   final ProjectCashflowModel cashflow;
   final bool showDailyStats;
   final DateTime? filterDate;
 
   const _SummaryContent({
+    required this.projectId,
     required this.cashflow,
     this.showDailyStats = false,
     this.filterDate,
@@ -358,6 +366,7 @@ class _SummaryContent extends StatelessWidget {
         // Daily stats card (hanya di tab per tanggal)
         if (showDailyStats && filterDate != null)
           DailyStatsCard(
+            projectId: projectId,
             setoranHariIni: cashflow.setoranHariIni ?? 0,
             pinjamanHariIni: cashflow.pinjamanHariIni ?? 0,
             pembayaranHariIni: cashflow.pembayaranHariIni ?? 0,

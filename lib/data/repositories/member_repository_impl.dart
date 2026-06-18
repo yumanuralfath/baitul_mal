@@ -91,6 +91,22 @@ class MemberRepositoryImpl implements MemberRepository {
   }
 
   @override
+  Future<void> addSavingsBatch(List<SavingModel> savings) async {
+    if (savings.isEmpty) return;
+    final db = await _db.database;
+    await db.transaction((txn) async {
+      final memberIds = <int>{};
+      for (final s in savings) {
+        await txn.insert('savings', s.toMap());
+        memberIds.add(s.memberId);
+      }
+      for (final mid in memberIds) {
+        await _syncAutoPaymentFromSavings(txn, mid);
+      }
+    });
+  }
+
+  @override
   Future<void> updateSaving(SavingModel saving) async {
     final db = await _db.database;
     await db.transaction((txn) async {
@@ -399,6 +415,42 @@ class MemberRepositoryImpl implements MemberRepository {
 
     if (rows.isEmpty) return null;
     return ProjectCashflowModel.fromMap(rows.first);
+  }
+
+  @override
+  Future<List<SavingModel>> getSavingsByDate(int projectId, DateTime date) async {
+    final db = await _db.database;
+    final start = DateTime(date.year, date.month, date.day, 0, 0, 0).toIso8601String();
+    final end = DateTime(date.year, date.month, date.day, 23, 59, 59).toIso8601String();
+    final rows = await db.rawQuery(
+      '''
+      SELECT s.*, m.name AS member_name
+      FROM savings s
+      JOIN members m ON m.id = s.member_id
+      WHERE s.project_id = ? AND s.transaction_date >= ? AND s.transaction_date <= ?
+      ORDER BY s.transaction_date ASC
+      ''',
+      [projectId, start, end],
+    );
+    return rows.map(SavingModel.fromMap).toList();
+  }
+
+  @override
+  Future<List<LoanModel>> getLoansByDate(int projectId, DateTime date) async {
+    final db = await _db.database;
+    final start = DateTime(date.year, date.month, date.day, 0, 0, 0).toIso8601String();
+    final end = DateTime(date.year, date.month, date.day, 23, 59, 59).toIso8601String();
+    final rows = await db.rawQuery(
+      '''
+      SELECT l.*, m.name AS member_name
+      FROM loans l
+      JOIN members m ON m.id = l.member_id
+      WHERE l.project_id = ? AND l.loan_date >= ? AND l.loan_date <= ?
+      ORDER BY l.loan_date ASC
+      ''',
+      [projectId, start, end],
+    );
+    return rows.map(LoanModel.fromMap).toList();
   }
 
   /// Sinkronisasi auto-potong dari tabungan bersih member ke pinjaman aktif.

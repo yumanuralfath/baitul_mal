@@ -1,6 +1,7 @@
 // lib/presentation/project_detail/screens/member_list_page.dart
 
 import 'package:baitul_mal_plus/presentation/ProjectDetail/ui/member_detail_screen.dart';
+import 'package:baitul_mal_plus/presentation/ProjectDetail/widget/batch_transaction_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:baitul_mal_plus/domain/models/member_model.dart';
 import 'package:baitul_mal_plus/domain/models/project_model.dart';
@@ -74,7 +75,19 @@ class _MemberListPageState extends State<MemberListPage> {
     return Scaffold(
       body: Column(
         children: [
-          _SortBar(current: _sort, onChanged: (s) => setState(() => _sort = s)),
+          FutureBuilder<List<MemberModel>>(
+            future: _future,
+            builder: (ctx, snap) {
+              final members = snap.data ?? [];
+              return _SortBar(
+                current: _sort,
+                onChanged: (s) => setState(() => _sort = s),
+                onBatch: members.isEmpty
+                    ? null
+                    : () => _showBatchTransaction(context, members),
+              );
+            },
+          ),
           Expanded(
             child: FutureBuilder<List<MemberModel>>(
               future: _future,
@@ -170,14 +183,36 @@ class _MemberListPageState extends State<MemberListPage> {
       _load();
     }
   }
+
+  void _showBatchTransaction(BuildContext context, List<MemberModel> members) {
+    // Sort by ID for batch transaction as requested
+    final sortedMembers = [...members];
+    sortedMembers.sort((a, b) => (a.id ?? 0).compareTo(b.id ?? 0));
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => BatchTransactionSheet(
+        members: sortedMembers,
+        project: widget.project,
+        repo: _repo,
+        onSuccess: _load,
+      ),
+    );
+  }
 }
 
 // ── Sort Bar ──────────────────────────────────────────────────
 class _SortBar extends StatelessWidget {
   final _SortMode current;
   final ValueChanged<_SortMode> onChanged;
+  final VoidCallback? onBatch;
 
-  const _SortBar({required this.current, required this.onChanged});
+  const _SortBar({
+    required this.current,
+    required this.onChanged,
+    this.onBatch,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -185,44 +220,59 @@ class _SortBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
         children: [
-          Text('Urutkan:', style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(width: 8),
           Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _SortChip(
-                    label: 'ID',
-                    selected: current == _SortMode.id,
-                    onTap: () => onChanged(_SortMode.id),
+            child: Row(
+              children: [
+                Text('Urutkan:', style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _SortChip(
+                          label: 'ID',
+                          selected: current == _SortMode.id,
+                          onTap: () => onChanged(_SortMode.id),
+                        ),
+                        const SizedBox(width: 6),
+                        _SortChip(
+                          label: 'Nama',
+                          selected: current == _SortMode.name,
+                          onTap: () => onChanged(_SortMode.name),
+                        ),
+                        const SizedBox(width: 6),
+                        _SortChip(
+                          label: 'Saldo',
+                          selected: current == _SortMode.balance,
+                          onTap: () => onChanged(_SortMode.balance),
+                        ),
+                        const SizedBox(width: 6),
+                        _SortChip(
+                          label: 'Hutang',
+                          selected: current == _SortMode.debt,
+                          onTap: () => onChanged(_SortMode.debt),
+                        ),
+                        const SizedBox(width: 6),
+                        _SortChip(
+                          label: 'Tabungan',
+                          selected: current == _SortMode.savings,
+                          onTap: () => onChanged(_SortMode.savings),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(width: 6),
-                  _SortChip(
-                    label: 'Nama',
-                    selected: current == _SortMode.name,
-                    onTap: () => onChanged(_SortMode.name),
-                  ),
-                  const SizedBox(width: 6),
-                  _SortChip(
-                    label: 'Saldo',
-                    selected: current == _SortMode.balance,
-                    onTap: () => onChanged(_SortMode.balance),
-                  ),
-                  const SizedBox(width: 6),
-                  _SortChip(
-                    label: 'Hutang',
-                    selected: current == _SortMode.debt,
-                    onTap: () => onChanged(_SortMode.debt),
-                  ),
-                  const SizedBox(width: 6),
-                  _SortChip(
-                    label: 'Tabungan',
-                    selected: current == _SortMode.savings,
-                    onTap: () => onChanged(_SortMode.savings),
-                  ),
-                ],
-              ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filledTonal(
+            onPressed: onBatch,
+            icon: const Icon(Icons.playlist_add, size: 20),
+            tooltip: 'Batch Transaksi',
+            style: IconButton.styleFrom(
+              visualDensity: VisualDensity.compact,
             ),
           ),
         ],
